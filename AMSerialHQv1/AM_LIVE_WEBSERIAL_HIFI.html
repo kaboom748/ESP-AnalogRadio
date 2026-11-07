@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AM LIVE USB — mono haute fidélité</title>
+<style>
+:root{font-family:system-ui,Arial,sans-serif;color-scheme:dark;color:#edf2fc;background:#0f1726}
+*{box-sizing:border-box}body{margin:0}main{max-width:980px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}h1{font-size:1.6rem;margin:4px 0}
+article{background:#1b2940;border:1px solid #344966;padding:17px;border-radius:14px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+label{display:block;margin:9px 0;font-size:.9rem;color:#c9d9ed}input,select{max-width:100%;font:inherit}select,input[type=number],input[type=file]{background:#101b2c;color:#fff;border:1px solid #54708c;border-radius:8px;padding:9px;width:100%;margin-top:4px}
+input[type=range]{width:100%}input[type=checkbox]{width:auto}button{border:0;border-radius:8px;padding:10px 14px;background:#2479bc;color:white;font:inherit;cursor:pointer;margin:4px 6px 4px 0}
+button[disabled]{opacity:.35;cursor:default}button.danger{background:#9d4343}
+small,.muted{color:#b8cbe2;font-size:.84rem}strong{color:#fff}pre{overflow:auto;white-space:pre-wrap;max-height:230px;font-size:.84rem;background:#0c1625;padding:10px;border-radius:6px}
+.meter{height:13px;border-radius:10px;background:#102035;overflow:hidden}.meter div{height:100%;background:#38b49c;width:0;transition:width .1s}
+.value{font-size:1.4rem;font-weight:750;font-variant-numeric:tabular-nums}#message{font-weight:600}audio{width:100%}
+#progress{width:100%;height:16px}code{color:#a6dcff} .warn{color:#ffd38b}
+</style></head><body><main>
+
+<header><h1>AM LIVE USB — mono haute fidélité — ESP8266</h1><div id="connState">Hors connexion</div></header>
+<p class="muted">Web Serial <strong id="baudLabel">2 000 000 bauds</strong> • Enveloppe ASK Q8.8 • Porteuse AM à fréquence fixe</p>
+<article><h2>1. Port USB-série</h2>
+<button id="connectBtn">Connecter le port</button><button id="disconnectBtn" disabled>Déconnecter</button>
+<button id="pingBtn" disabled>État / PING</button><button id="rfOffBtn" class="danger" disabled>ARRÊT RF</button><button id="rfOnBtn" disabled>Reprendre CW</button>
+<div id="deviceState" class="muted">Ouvre le fichier dans Chrome ou Edge depuis http://localhost ou une autre origine sécurisée. Utilise le firmware AM haute fidélité.</div>
+<p class="warn">Utilise une liaison RF atténuée ou blindée. Le firmware maintient sa porteuse CW au repos jusqu’à la commande ARRÊT RF.</p>
+</article>
+<article><h2>2. Préparer le fichier</h2>
+<label>Fichier MP3 ou WAV mono ou stéréo<input id="musicFile" type="file" accept="audio/*,.wav,.mp3,.flac,.ogg"></label>
+<div id="fileStats" class="muted">Aucun fichier importé.</div>
+<div class="grid">
+<label>Début de l’extrait (s)<input id="trimStart" type="number" min="0" step="0.01" value="0"></label>
+<label>Fin de l’extrait (s)<input id="trimEnd" type="number" min="0" step="0.01" value="0"></label>
+<label>Cadence de l’enveloppe<select id="amRate"><option value="32000">32 kéch/s</option><option value="48000" selected>48 kéch/s</option><option value="64000">64 kéch/s</option></select></label>
+<label>Bande audio<select id="amBandwidth"><option value="6000">6 kHz</option><option value="10000">10 kHz</option><option value="14000" selected>14 kHz</option><option value="18000">18 kHz</option></select></label>
+<label>Puissance APWR<input id="apwr" type="number" min="0" max="191" step="1" value="63"></label>
+</div>
+<label>Profondeur de modulation <output id="amDepthValue">60 %</output><input id="amDepth" type="range" min="10" max="90" step="5" value="60"></label>
+<p class="muted">Le signal est ramené en mono, filtré et modulé avec une marge de 1 dB à la crête. La linéarisation de l’enveloppe dépend du réglage APWR.</p>
+<button id="sourcePreviewBtn" disabled>Écouter l’extrait</button><button id="stopPreviewBtn">Arrêter l’écoute</button>
+<button id="encodeBtn" disabled>Préencoder l’extrait</button>
+<div id="encodeStats" class="muted">Aucune enveloppe préparée.</div>
+</article>
+<article><h2>3. Diffuser par USB</h2>
+<button id="startBtn" disabled>Diffuser vers ESP8266</button><button class="danger" id="abortBtn" disabled>Stopper l’envoi</button>
+<div id="startPrereqs" class="muted" role="status" aria-live="polite">Connecte le port puis prépare un extrait.</div>
+<progress id="progress" max="100" value="0"></progress>
+<div class="grid">
+<div><div class="muted">Octets d’enveloppe remis au port série</div><div id="sentFrames" class="value">0 / 0</div></div>
+<div><div class="muted">Durée transmise et durée totale</div><div id="sendTime" class="value">00:00 / 00:00</div></div>
+<div><div class="muted">Tampon ESP (8 192 octets)</div><div id="ramValue" class="value">—</div><div class="meter"><div id="ramFill"></div></div></div>
+<div><div class="muted">FIFO UART (128 octets)</div><div id="fifoValue" class="value">—</div><div class="meter"><div id="fifoFill"></div></div></div>
+</div>
+<p id="streamStatus" class="muted">À 48 kéch/s, le flux consomme 96 000 octets par seconde.</p>
+</article>
+<article><h2>4. Diagnostics</h2><pre id="diagnostics">Pas de transmission.</pre><h3>Journal</h3><pre id="events"></pre></article>
+</main><script>
+'use strict';
+
+const $=id=>document.getElementById(id);
+const BAUD=2000000, SAMPLE_BYTES=2, MAX_STREAM_SAMPLES=60000000, START_AM=0xA7;
+const AM_RATES = [32000, 48000, 64000];
+const AM_BANDS = [6000, 10000, 14000, 18000];
+const ASK_CURVES = {0:[1.0,0.95743315,0.95078784,0.92394758,0.90142488,0.87706754,0.85084419,0.83004498,0.8078478,0.7940185,0.77247411,0.75100042,0.72672246,0.71138987,0.69166168,0.67390729,0.6550511,0.63856805,0.6207857,0.60094717,0.58998829,0.57512101,0.5593904,0.53987125,0.52561976,0.50779076,0.49389406,0.47985667,0.46646669,0.45345248,0.43678825,0.42334467,0.41070757,0.40202872,0.3885608,0.37434,0.36166935,0.3511318,0.33919583,0.33159247,0.32475591,0.31050305,0.30219796,0.29182727,0.28649972,0.27603771,0.26920352,0.25864745,0.24991027,0.24180248,0.23525039,0.23012965,0.2223199,0.21286998,0.20712942,0.20130797,0.19305369,0.19293388,0.18536726,0.17833095,0.17318233,0.1697063,0.16265535,0.16006627,0.15556954,0.14879178,0.14566482,0.14187713,0.13777877,0.13503505,0.13077378,0.12509513,0.12226006,0.1184015,0.11358452,0.11321949,0.10916759,0.10640606,0.10250995,0.10090228,0.10032329,0.09894749,0.09346951,0.08941948,0.08664286,0.08482259,0.082082,0.08207552,0.07894478,0.07661189,0.07362847,0.07340895,0.07165626,0.06851036,0.06797622,0.06584223,0.06425828,0.06374942,0.06374932,0.05968427,0.05809927,0.05767157,0.05585802,0.05472541,0.05472531,0.05294756,0.05112261,0.050909,0.0502908,0.0502907,0.0502906,0.04894745,0.04894735,0.04809838,0.04708553,0.04469026,0.04469016,0.04282583,0.04223709,0.04204616,0.04073543,0.04073533,0.04073523,0.04053494,0.03971949,0.03906413,0.03825967,0.03825957],63:[1.0,0.9999999,0.9999998,0.9999997,0.9999996,0.9999995,0.99888756,0.9894373,0.97727202,0.97281363,0.96739725,0.95321856,0.9386911,0.92490974,0.90428809,0.88696394,0.86887995,0.83706268,0.82227794,0.80666051,0.79017237,0.77528532,0.75781764,0.74262537,0.72111745,0.70306679,0.68264593,0.65882836,0.64702793,0.63198947,0.61157207,0.59607751,0.58108267,0.57496493,0.55926186,0.54261486,0.52611018,0.51466162,0.49904495,0.48876976,0.47711181,0.4609294,0.45102914,0.44142507,0.43166081,0.41869526,0.41016129,0.40089396,0.39132065,0.3811841,0.37290842,0.3630824,0.35471922,0.34580371,0.33339018,0.32292097,0.31460947,0.30895992,0.29932992,0.28816798,0.27573448,0.26872199,0.2618849,0.25630932,0.24989131,0.24101328,0.23626786,0.22850468,0.22293225,0.21767885,0.21213621,0.20557732,0.19925954,0.19322064,0.18957065,0.18380574,0.17787836,0.17294045,0.16663801,0.16012681,0.15559748,0.15271005,0.14520106,0.14094643,0.13507953,0.13051831,0.12458665,0.12041897,0.11595381,0.1092318,0.10561164,0.102079,0.09779593,0.09377523,0.0903977,0.08459398,0.08057885,0.07652332,0.07411981,0.07050495,0.06845633,0.065094,0.06279281,0.05738296,0.05648156,0.05343416,0.0522224,0.04899389,0.04693556,0.04307313,0.04246009,0.04055247,0.04055237,0.03793794,0.03720526,0.03432115,0.03352328,0.03192775,0.03015811,0.02910658,0.02910648,0.0268689,0.0263028,0.0251887,0.02426588,0.02384716,0.02357971,0.02357961]};
+const ST={PAUSE:235,RESUME:236,STREAM_READY:239,READY:240,PLAY:241,FINISH:242,TIMEOUT:243,UNDERRUN:244,OVERFLOW:245,RF_FAULT:246,CMD_ERROR:247,RF_OFF:248};
+// Au plus une écriture de 512 octets à la fois. Un délai entamé en parallèle
+// laisse au bloc ses 2,56 ms sur le fil UART à 2 Mbaud (8N1).
+const STANDARD_PACING={bytes:512, delayMs:3};
+// À 64 kHz, 512 octets toutes les 4 ms ne laissent aucune marge.
+// 704 octets prennent 3,52 ms sur le fil et restent sous la réserve RAM de 1 024 octets.
+const FAST_PACING={bytes:704, delayMs:4};
+const serialPacing=rate=>rate===64000?FAST_PACING:STANDARD_PACING;
+const METRIC_PAINT_PERIOD_MS=150;
+$('baudLabel').textContent=BAUD.toLocaleString('fr-CA')+' bauds';
+let audioCtx=null,sourceAudio=null,sourceRate=0,sourceDuration=0,sourceLoadId=0,encodingGeneration=0,encoded=null,encodedPayload=null,encoding=false;
+let previewSource=null,port=null,reader=null,writer=null,connected=false,readerTask=null;
+let serialState='disconnected',txActive=false,txStopped=false,txPaused=false,streamReady=false,txDataComplete=false,pumpRunning=false;
+let txPayload=null,txBytes=0,txBegin=0,playBegin=0,txEnded=0,txRate=0;
+let pauseCount=0,resumeCount=0,ramStatusCount=0,ramLast=null,ramMin=101,ramMax=-1;
+let lastMetricsPaint=0,recentFifo=null,maxFifoSeen=null;
+let lastDeviceReplyAt=0,deviceConfirmed=false,faults=0,writeMsMax=0,maxGapMs=0;
+let lastBurstAt=0,burstCount=0, pauseStartedAt=0,totalPausedMs=0;
+const log=s=>{$('events').textContent=`${new Date().toLocaleTimeString()} ${s}\n`+$('events').textContent.slice(0,10000);};
+const show=s=>{$('streamStatus').textContent=s;};
+const fmtTime=n=>{n=Math.max(0,Math.floor(n||0));return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');};
+function buttons(){
+ $('connectBtn').disabled=connected;$('disconnectBtn').disabled=!connected;
+ $('pingBtn').disabled=!connected||txActive;
+ $('rfOffBtn').disabled=!connected||txActive;
+ $('rfOnBtn').disabled=!connected||txActive;
+ const missing=[];
+ if(!connected)missing.push('connecter le port USB');
+ else if(!deviceConfirmed)missing.push('attendre la réponse de l’ESP au PING (utilise État / PING)');
+ if(!sourceAudio)missing.push('choisir un fichier musical');
+ else if(!encodedPayload)missing.push('cliquer sur « Préencoder l’extrait »');
+ if(serialState==='rf-off')missing.push('cliquer sur « Reprendre CW »');
+ if(txActive||pumpRunning)missing.push('diffusion déjà en cours');
+ const ready=connected&&!!encodedPayload&&!txActive&&!pumpRunning&&deviceConfirmed&&serialState!=='rf-off';
+ $('startBtn').disabled=!ready;
+ const explanation=ready?'Prêt : ESP confirmé par PING, fichier préencodé, 2 000 000 bauds. Tu peux diffuser.':'Bouton désactivé : '+missing.join(' ; ')+'.';
+ $('startPrereqs').textContent=explanation;
+ $('startPrereqs').style.color=ready?'#84f4c2':'#ffd38b';
+ $('startBtn').title=explanation;
+ $('abortBtn').disabled=!txActive;
+ $('encodeBtn').disabled=!sourceAudio||encoding||txActive;
+ $('musicFile').disabled=txActive;
+ $('sourcePreviewBtn').disabled=!sourceAudio;
+}
+
+function commonDivisor(a, b) {
+ while (b) [a, b] = [b, a % b];
+ return a;
+}
+
+// Interpolation polyphasée et filtrage anti-repliement avec la même convolution.
+function interpolationKernel(fraction, radius, cutoff) {
+ const omega = 2 * Math.PI * cutoff;
+ const weights = new Float64Array(2 * radius + 1);
+ let dcGain = 0;
+ for (let tap = -radius; tap <= radius; tap++) {
+  const d = fraction - tap;
+  if (Math.abs(d) >= radius) continue;
+  const angle = Math.PI * d / radius;
+  const window = 0.42 + 0.5 * Math.cos(angle) + 0.08 * Math.cos(2 * angle);
+  const sinc = d === 0 ? 2 * cutoff : Math.sin(omega * d) / (Math.PI * d);
+  const weight = sinc * window;
+  weights[tap + radius] = weight;
+  dcGain += weight;
+ }
+ for (let i = 0; i < weights.length; i++) weights[i] /= dcGain;
+ return weights;
+}
+
+function makeEnvelopeMap(apwr) {
+ const measured = ASK_CURVES[apwr];
+ const calibrated = Array.isArray(measured) && measured.length >= 2 && measured.length <= 128 &&
+  measured.every(v => Number.isFinite(v) && v >= 0) && measured[0] > 0 &&
+  measured[measured.length - 1] < 0.8 * measured[0];
+ // Estimation initiale de l'exemple AMF1, en amplitude RF et non en puissance.
+ const amplitudes = calibrated ? measured.map(v => v / measured[0]) :
+  Array.from({length:128}, (_, ask) => Math.pow(10, -0.2429 * ask / 20));
+ for (let i = 1; i < amplitudes.length; i++) amplitudes[i] = Math.min(amplitudes[i], amplitudes[i - 1]);
+ const lookup = new Uint16Array(65536);
+ const last = amplitudes.length - 1;
+ const minimum = amplitudes[last];
+ let ask = last;
+ for (let i = 0; i < lookup.length; i++) {
+  const amplitude = i / (lookup.length - 1);
+  if (amplitude <= minimum) {
+   lookup[i] = last * 256;
+   continue;
+  }
+  while (ask > 1 && amplitude >= amplitudes[ask - 1]) ask--;
+  const upper = amplitudes[ask - 1];
+  const span = upper - amplitudes[ask];
+  lookup[i] = Math.round((ask - 1 + (span > 0 ? (upper - amplitude) / span : 0)) * 256);
+ }
+ return {lookup, minimum, calibrated};
+}
+
+async function encodeAM(mono, inputRate, settings, progress = () => {}) {
+ const {rate, bandwidth, depth, apwr} = settings;
+ if (!AM_RATES.includes(rate) || !AM_BANDS.includes(bandwidth) || !Number.isFinite(depth) ||
+     depth < 0.1 || depth > 0.9 || !Number.isInteger(apwr) || apwr < 0 || apwr > 191) {
+  throw Error('Réglage AM invalide.');
+ }
+ const samples = Math.floor(mono.length * rate / inputRate);
+ if (!Number.isInteger(inputRate) || inputRate < 8000 ||
+     !Number.isSafeInteger(samples) || samples < 256 || samples > MAX_STREAM_SAMPLES) {
+  throw Error('Longueur ou fréquence d’échantillonnage hors limites.');
+ }
+ const effectiveBand = Math.min(bandwidth, Math.min(inputRate, rate) * 0.44);
+ const cutoff = (effectiveBand + 250) / inputRate;
+ const radius = Math.ceil(inputRate / 375);
+ const phases = Math.min(1024, rate / commonDivisor(rate, inputRate));
+ const bank = Array.from({length:phases}, (_, i) => interpolationKernel(i / phases, radius, cutoff));
+ const programme = new Float32Array(samples);
+ const chunk = Math.max(1, Math.floor(rate / 2));
+ let peak = 0;
+ for (let i = 0; i < samples; i++) {
+  if (i % chunk === 0) {
+   progress(0.9 * i / samples);
+   await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  const position = i * inputRate;
+  const base = Math.floor(position / rate);
+  const phase = Math.floor((position % rate) * phases / rate);
+  const weights = bank[phase];
+  const firstTap = Math.max(-radius, -base);
+  const lastTap = Math.min(radius, mono.length - 1 - base);
+  let value = 0;
+  for (let tap = firstTap; tap <= lastTap; tap++) value += mono[base + tap] * weights[tap + radius];
+  if (!Number.isFinite(value)) throw Error('Échantillon audio invalide.');
+  programme[i] = value;
+  peak = Math.max(peak, Math.abs(value));
+ }
+ const {lookup, minimum, calibrated} = makeEnvelopeMap(apwr);
+ const top = 0.89;
+ const effectiveDepth = Math.min(depth, (top - minimum) / (top + minimum));
+ const carrier = top / (1 + effectiveDepth);
+ const gain = peak > 0 ? effectiveDepth / peak : 0;
+ const payload = new Uint8Array(samples * SAMPLE_BYTES);
+ const data = new DataView(payload.buffer);
+ for (let i = 0; i < samples; i++) {
+  if (i % chunk === 0) {
+   progress(0.9 + 0.1 * i / samples);
+   await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  const envelope = carrier * (1 + gain * programme[i]);
+  data.setUint16(i * SAMPLE_BYTES, lookup[Math.round(envelope * (lookup.length - 1))], true);
+ }
+ progress(1);
+ return {payload, samples, rate, apwr, effectiveBand, effectiveDepth, calibrated};
+}
+
+function invalidate() {
+ ++encodingGeneration;
+ encoded = encodedPayload = null;
+ $('encodeStats').textContent = 'Préencode l’extrait après chaque modification.';
+ buttons();
+}
+for (const id of ['amBandwidth', 'amDepth', 'apwr', 'trimStart', 'trimEnd']) {
+ $(id).addEventListener('input', invalidate);
+}
+$('amDepth').addEventListener('input', () => {
+ $('amDepthValue').textContent = $('amDepth').value + ' %';
+});
+function defaultClipEnd(rate) {
+ return Math.min(Math.ceil(sourceDuration * 100) / 100, MAX_STREAM_SAMPLES / rate).toFixed(2);
+}
+let selectedRate = Number($('amRate').value);
+$('amRate').addEventListener('input', () => {
+ const rate = Number($('amRate').value);
+ if (sourceAudio && Number($('trimStart').value) === 0 && $('trimEnd').value === defaultClipEnd(selectedRate)) {
+  $('trimEnd').value = defaultClipEnd(rate);
+ }
+ selectedRate = rate;
+ invalidate();
+ paintMetrics(true);
+});
+async function audioContext() {
+ if (!audioCtx) audioCtx = new AudioContext({sampleRate: 48000});
+ await audioCtx.resume();
+ return audioCtx;
+}
+$('musicFile').addEventListener('change', async () => {
+ const file = $('musicFile').files?.[0];
+ if (!file) return;
+ const loadId = ++sourceLoadId;
+ sourceAudio = null;
+ invalidate();
+ try {
+  const context = await audioContext();
+  const decoded = await context.decodeAudioData(await file.arrayBuffer());
+  if (loadId !== sourceLoadId) return;
+  if (decoded.numberOfChannels > 2) throw Error('Choisis un fichier mono ou stéréo.');
+  sourceAudio = decoded;
+  sourceRate = decoded.sampleRate;
+  sourceDuration = decoded.duration;
+  const endOfFile = Math.ceil(sourceDuration * 100) / 100;
+  $('trimStart').value = '0';
+  $('trimStart').max = $('trimEnd').max = endOfFile.toFixed(2);
+  $('trimEnd').value = defaultClipEnd(selectedRate);
+  const channelText = decoded.numberOfChannels === 2 ? 'stéréo, ramené en mono pour l’AM' : 'mono';
+  $('fileStats').textContent = file.name + ' • ' + sourceDuration.toFixed(2) + ' s • ' + channelText;
+ } catch (error) {
+  if (loadId === sourceLoadId) $('fileStats').textContent = error.message;
+ } finally {
+  if (loadId === sourceLoadId) buttons();
+ }
+});
+function getClip() {
+ if (!sourceAudio) throw Error('Choisis un fichier.');
+ const from = Number($('trimStart').value);
+ const to = Number($('trimEnd').value);
+ const end = Math.min(to, sourceDuration);
+ const maxSeconds = MAX_STREAM_SAMPLES / selectedRate;
+ if (!Number.isFinite(from) || !Number.isFinite(to) || from < 0 || end <= from ||
+     to > sourceDuration + 0.01 || end - from > maxSeconds) {
+  throw Error('Sélectionne un extrait valide de ' + maxSeconds.toLocaleString('fr-CA') + ' secondes maximum.');
+ }
+ const first = Math.floor(from * sourceRate);
+ const last = end === sourceDuration ? sourceAudio.length : Math.floor(end * sourceRate);
+ if (last - first < Math.ceil(sourceRate * 256 / selectedRate)) throw Error('Extrait trop court.');
+ const channels = [];
+ for (let ch = 0; ch < sourceAudio.numberOfChannels; ch++) {
+  const clip = sourceAudio.getChannelData(ch).slice(first, last);
+  let mean = 0;
+  for (const sample of clip) mean += sample;
+  mean /= clip.length;
+  const fade = Math.max(1, Math.min(Math.floor(sourceRate * 0.008), Math.floor(clip.length / 4)));
+  for (let i = 0; i < clip.length; i++) {
+   const gain = Math.min(1, i / fade, (clip.length - 1 - i) / fade);
+   clip[i] = (clip[i] - mean) * gain;
+  }
+  channels.push(clip);
+ }
+ return channels;
+}
+function stopAudio() {
+ if (!previewSource) return;
+ previewSource.stop();
+ previewSource.disconnect();
+ previewSource = null;
+}
+$('stopPreviewBtn').onclick = stopAudio;
+$('sourcePreviewBtn').onclick = async () => {
+ try {
+  const channels = getClip();
+  const context = await audioContext();
+  stopAudio();
+  const buffer = context.createBuffer(channels.length, channels[0].length, sourceRate);
+  channels.forEach((data, index) => buffer.copyToChannel(data, index));
+  const source = context.createBufferSource();
+  previewSource = source;
+  source.buffer = buffer;
+  source.connect(context.destination);
+  source.onended = () => {
+   if (previewSource === source) previewSource = null;
+   source.disconnect();
+  };
+  source.start();
+ } catch (error) {
+  log(error.message);
+ }
+};
+$('encodeBtn').onclick = async () => {
+ if (encoding || txActive) return;
+ encoding = true;
+ invalidate();
+ const generation = encodingGeneration;
+ try {
+  const [mono, right] = getClip();
+  if (right) for (let i = 0; i < mono.length; i++) mono[i] = 0.5 * (mono[i] + right[i]);
+  const result = await encodeAM(mono, sourceRate, {
+   rate: selectedRate,
+   bandwidth: Number($('amBandwidth').value),
+   depth: Number($('amDepth').value) / 100,
+   apwr: Number($('apwr').value)
+  }, fraction => {
+   if (generation !== encodingGeneration) throw Error('Réglages modifiés.');
+   show('Préparation de l’enveloppe AM • ' + Math.floor(100 * fraction) + ' %');
+  });
+  if (generation !== encodingGeneration) return;
+  encoded = result;
+  encodedPayload = result.payload;
+  $('encodeStats').textContent = 'AM mono • ' + (result.samples / result.rate).toFixed(2) + ' s • ' +
+   result.payload.length.toLocaleString('fr-CA') + ' octets • bande ' + (result.effectiveBand / 1000).toFixed(1) +
+   ' kHz • profondeur ' + (result.effectiveDepth * 100).toFixed(1) + ' % • ' +
+   (result.calibrated ? 'courbe ASK mesurée' : 'courbe ASK estimée');
+  log('Enveloppe AM préparée.');
+  show('Prêt pour la diffusion.');
+ } catch (error) {
+  if (generation === encodingGeneration) show('Encodage impossible. ' + error.message);
+ } finally {
+  encoding = false;
+  buttons();
+ }
+};
+
+function setRam(p){
+ ramLast=p;ramMin=Math.min(ramMin,p);ramMax=Math.max(ramMax,p);
+}
+function setFifo(n){recentFifo=n;}
+function paintMetrics(force=false){
+ const now=performance.now();
+ if(!force && now-lastMetricsPaint<METRIC_PAINT_PERIOD_MS)return;
+ lastMetricsPaint=now;
+ $('ramValue').textContent=ramLast===null?'—':ramLast+' %';
+ $('ramFill').style.width=(ramLast===null?0:ramLast)+'%';
+ $('fifoValue').textContent=recentFifo===null?'inconnue':recentFifo+' / 128';
+ $('fifoFill').style.width=recentFifo===null?'0%':(recentFifo/128*100)+'%';
+ refreshTX();
+}
+function refreshTX(){
+ const count=txPayload?.length??encodedPayload?.length??0;
+ const rate=txPayload ? txRate : (encoded?.rate ?? selectedRate);
+ const byteRate=rate*SAMPLE_BYTES;
+ $('sentFrames').textContent=`${txBytes} / ${count}`;
+ $('sendTime').textContent=`${fmtTime(txBytes/byteRate)} / ${fmtTime(count/byteRate)}`;
+ $('progress').value=count?100*txBytes/count:0;
+ const now=txEnded||performance.now();
+ const elapsed=txBegin?(now-txBegin)/1000:0;
+ const playElapsed=playBegin?(now-playBegin)/1000:0;
+ const actualKbps=elapsed>0?txBytes/elapsed/1000:0;
+ const pausedSecs=(totalPausedMs+(txPaused&&pauseStartedAt?now-pauseStartedAt:0))/1000;
+ $('diagnostics').textContent=`État firmware : ${serialState}
+Octets remis au port série : ${txBytes} / ${count}
+Débit depuis START : ${actualKbps.toFixed(2)} ko/s (enveloppe : ${byteRate/1000} ko/s)
+Occupation RAM 8192 o : ${ramLast??'—'} % (min ${ramMin>100?'—':ramMin}, max ${ramMax<0?'—':ramMax})
+FIFO pic récent : ${recentFifo===null?'—':'~'+recentFifo+'/128'} ; maxi vu ~${maxFifoSeen??'—'}
+État contrôle : ${txPaused?'PAUSE obligatoire':streamReady?'Envoi autorisé':'Attente ESP'}
+PAUSE : ${pauseCount} / REPRISE : ${resumeCount}, cumul des pauses ${pausedSecs.toFixed(2)} s
+Écritures Web Serial : ${burstCount} (${serialPacing(rate).bytes} octets max par écriture)
+Écart maximal entre écritures hors pause : ${maxGapMs.toFixed(1)} ms
+Écriture Web Serial maximale : ${writeMsMax.toFixed(1)} ms
+Durée navigateur : ${elapsed.toFixed(2)} s ; durée depuis PLAY : ${playElapsed.toFixed(2)} s
+Messages RAM reçus : ${ramStatusCount}
+Erreurs : ${faults}
+Interruptions UART RX : actives en COMMANDES, désactivées en STREAM.`;
+}
+
+function handleByte(b){
+ if((txActive&&b<=100)||(b>=235&&b<=248))lastDeviceReplyAt=performance.now();
+ if(b<=100){
+  if(txActive){setRam(b);++ramStatusCount;paintMetrics();}
+  return;
+ }
+ // Statuts de RAM de versions precedentes : affichage seulement, sans credits.
+ if(b>=101&&b<=201){if(txActive){setRam(b-101);paintMetrics();}return;}
+ if(b>=202&&b<=234){
+  if(txActive){const fifo=Math.min(128,(b-202)*4);setFifo(fifo);maxFifoSeen=Math.max(maxFifoSeen??0,fifo);paintMetrics();}
+  return;
+ }
+ switch(b){
+  case ST.PAUSE:
+   if(txActive){
+    if(!txPaused){txPaused=true;++pauseCount;pauseStartedAt=performance.now();serialState='AM — PAUSE RAM';show('RAM presque pleine : suspension obligatoire des ecritures');}
+   }
+   break;
+  case ST.RESUME:
+   if(txActive){
+    if(txPaused){totalPausedMs+=performance.now()-pauseStartedAt;pauseStartedAt=0;lastBurstAt=0;++resumeCount;}
+    txPaused=false;serialState='AM — envoi autorisé';
+    if(streamReady&&!txDataComplete&&!pumpRunning)void streamPump();
+   }
+   break;
+  case ST.STREAM_READY:
+   if(txActive){streamReady=true;serialState='STREAM prêt, envoi audio';show('ESP prêt à recevoir l’enveloppe AM');void streamPump();}
+   break;
+  case ST.READY:
+   serialState='CW / prêt';deviceConfirmed=true;$('connState').textContent='ESP répond — CW';log('ESP prêt (commandes UART actives)');break;
+  case ST.PLAY:
+   playBegin=performance.now();serialState=txPaused?'AM active — PAUSE RAM':'AM en cours';
+   log('Émission AM démarrée');show(serialState);break;
+  case ST.FINISH:
+   if(txPaused&&pauseStartedAt)totalPausedMs+=performance.now()-pauseStartedAt;
+   txEnded=performance.now();serialState='Fin normale — CW';deviceConfirmed=true;txActive=false;txStopped=false;streamReady=false;txPaused=false;txDataComplete=true;pauseStartedAt=0;
+   log('Musique terminée, retour CW ; IRQ UART commandes réactivées');show(serialState);break;
+  case ST.TIMEOUT:serialState='ERREUR : timeout UART';stopFlow();break;
+  case ST.UNDERRUN:serialState='ERREUR : underrun audio';stopFlow();break;
+  case ST.OVERFLOW:serialState='ERREUR : débordement / framing UART';stopFlow();break;
+  case ST.RF_FAULT:serialState='ERREUR : RF / CPU';deviceConfirmed=false;stopFlow();break;
+  case ST.CMD_ERROR:serialState='ERREUR : commande AM refusée';stopFlow();break;
+  case ST.RF_OFF:serialState='rf-off';deviceConfirmed=true;txActive=false;log('RF arrêtée');break;
+  default:log('Statut non reconnu : '+b);
+ }
+ if(b>=243&&b<=247){faults++;log('ESP : '+serialState+'; streaming arrêté; relancer manuellement.');}
+ $('deviceState').textContent='Statut : '+serialState;
+ if(b>=243&&b<=247)show(serialState);
+ buttons();paintMetrics(true);
+}
+function stopFlow(){
+ if(txActive)txEnded=performance.now();
+ if(txPaused&&pauseStartedAt)totalPausedMs+=performance.now()-pauseStartedAt;
+ txActive=false;txStopped=true;streamReady=false;txPaused=false;pauseStartedAt=0;
+ buttons();show(serialState);paintMetrics(true);
+}
+let pacingWorker = null;
+let pacingResolve = null;
+let pacingReject = null;
+function nextWriteSlot(delayMs) {
+ if (!pacingWorker) {
+  const url = URL.createObjectURL(new Blob([
+   'self.onmessage = e => setTimeout(() => self.postMessage(0), e.data);'
+  ], {type: 'text/javascript'}));
+  try {
+   pacingWorker = new Worker(url);
+  } finally {
+   URL.revokeObjectURL(url);
+  }
+  pacingWorker.onmessage = () => {
+   const resolve = pacingResolve;
+   pacingResolve = pacingReject = null;
+   resolve?.();
+  };
+  pacingWorker.onerror = () => {
+   const reject = pacingReject;
+   pacingResolve = pacingReject = null;
+   pacingWorker.terminate();
+   pacingWorker = null;
+   reject?.(Error('Horloge de diffusion indisponible.'));
+  };
+ }
+ return new Promise((resolve, reject) => {
+  pacingResolve = resolve;
+  pacingReject = reject;
+  pacingWorker.postMessage(delayMs);
+ });
+}
+async function streamPump(){
+ if(pumpRunning||!txActive||txStopped||txPaused||!streamReady||!writer||!txPayload)return;
+ const pacing=serialPacing(txRate);
+ pumpRunning=true;
+ try{
+  while(txActive&&!txStopped&&!txPaused&&streamReady&&txBytes<txPayload.length){
+   const block=txPayload.subarray(txBytes,txBytes+pacing.bytes);
+   const started=performance.now();
+   if(lastBurstAt)maxGapMs=Math.max(maxGapMs,started-lastBurstAt);
+   lastBurstAt=started;
+   const slot=nextWriteSlot(pacing.delayMs);
+   const write=Promise.resolve().then(()=>writer.write(block)).then(()=>{
+    writeMsMax=Math.max(writeMsMax,performance.now()-started);
+   });
+   const outcomes=await Promise.allSettled([slot,write]);
+   for(const outcome of outcomes)if(outcome.status==='rejected')throw outcome.reason;
+   txBytes+=block.length;++burstCount;
+   paintMetrics();
+  }
+  if(txActive&&!txDataComplete&&txBytes===txPayload.length){
+    txDataComplete=true;serialState='Audio remis au port série — vidange RAM en cours';
+    show('Tous les échantillons sont remis au port série. Attente de la fin RF.');paintMetrics(true);
+  }
+ }catch(e){serialState='ERREUR Web Serial : '+e.message;++faults;stopFlow();log(serialState);}
+ finally{
+  pumpRunning=false;buttons();paintMetrics(true);
+  // Une REPRISE reçue pendant la dernière écriture peut relancer la pompe.
+  if(txActive&&!txStopped&&!txPaused&&streamReady&&!txDataComplete&&txBytes<txPayload.length){
+   void streamPump();
+  }
+ }
+}
+async function readPort(){
+ try{
+  while(reader){
+   const {value,done}=await reader.read();if(done)break;
+   if(value)for(const b of value)handleByte(b);
+  }
+ }catch(e){log('Lecture série : '+e.message);}
+ finally{if(connected){serialState='port perdu';stopFlow();connected=false;buttons();}}
+}
+async function sendCommand(arr){
+ if(!writer)throw Error('Aucun port');
+ await writer.write(new Uint8Array(arr));
+}
+$('connectBtn').onclick=async()=>{
+ try{
+  if(!('serial' in navigator)||!window.isSecureContext)throw Error('Web Serial nécessite Chrome / Edge et une origine sécurisée (http://localhost).');
+  port=await navigator.serial.requestPort();
+  await port.open({baudRate:BAUD,dataBits:8,stopBits:1,parity:'none',flowControl:'none',bufferSize:FAST_PACING.bytes});
+  reader=port.readable.getReader();writer=port.writable.getWriter();
+  connected=true;deviceConfirmed=false;lastDeviceReplyAt=0;serialState='port ouvert — ESP non confirmé';$('connState').textContent='USB ouvert (ESP non confirmé)';buttons();
+  readerTask=readPort();
+  // Ouverture du port peut rebooter ESP via DTR/RTS; laisser amorcer la PHY.
+  await new Promise(resolve=>setTimeout(resolve,900));
+  await sendCommand([0xA0]);
+  log('Port ouvert 2000000, PING envoyé');
+  // L'ouverture USB peut redemarrer l'ESP : si sa PHY demarre lentement,
+  // reessayer le PING sans bloquer la page ni entrer en streaming.
+  await new Promise(resolve=>setTimeout(resolve,1100));
+  if(connected&&!txActive&&!deviceConfirmed){
+    log('Aucune réponse au premier PING : nouvel essai automatique');
+    await sendCommand([0xA0]);
+    await new Promise(resolve=>setTimeout(resolve,800));
+    if(connected&&!deviceConfirmed){
+      serialState='ESP ne répond pas au PING';
+      $('connState').textContent='USB ouvert — ESP muet';
+      log('PING sans réponse : vérifier firmware AM, 2000000 bauds, port correct et CPU 160 MHz');
+      buttons();
+    }
+  }
+ }catch(e){log('Connexion : '+e.message);}
+};
+$('disconnectBtn').onclick=async()=>{
+ if(txActive){log('Coupe d’abord le flux (timeout ESP), puis déconnecte.');return;}
+ try{
+  if(reader){await reader.cancel();reader.releaseLock();reader=null;}
+  if(writer){writer.releaseLock();writer=null;}
+  if(port)await port.close();
+ }catch(e){log('Déconnexion : '+e.message);}
+ connected=false;deviceConfirmed=false;lastDeviceReplyAt=0;port=null;serialState='disconnected';$('connState').textContent='Hors connexion';buttons();
+};
+$('pingBtn').onclick=async()=>{try{log('PING → ESP (mode commande)');await sendCommand([0xA0])}catch(e){log(e.message)}};
+$('rfOffBtn').onclick=async()=>{try{await sendCommand([0xA2])}catch(e){log(e.message)}};
+$('rfOnBtn').onclick=async()=>{try{await sendCommand([0xA3])}catch(e){log(e.message)}};
+$('startBtn').onclick=async()=>{
+ if(!writer||!encodedPayload||txActive||pumpRunning)return;
+ try{
+  const n=encoded.samples;
+  if(n<256||n>MAX_STREAM_SAMPLES||encodedPayload.length!==n*SAMPLE_BYTES)throw Error('Taille d’enveloppe invalide');
+  const rateIndex=AM_RATES.indexOf(encoded.rate);
+  const apwr=encoded.apwr;
+  if(rateIndex<0||!Number.isInteger(apwr)||apwr<0||apwr>191)throw Error('Réglage RF invalide');
+  txPayload=encodedPayload;
+  txRate=encoded.rate;
+  txActive=true;txStopped=false;txPaused=false;streamReady=false;txDataComplete=false;txBytes=faults=0;lastMetricsPaint=0;
+  ramMin=101;ramMax=-1;ramLast=null;ramStatusCount=0;writeMsMax=maxGapMs=0;lastBurstAt=burstCount=0;
+  pauseCount=resumeCount=0;pauseStartedAt=totalPausedMs=0;
+  serialState='initialisation du stream';txBegin=performance.now();playBegin=txEnded=0;maxFifoSeen=null;recentFifo=null;buttons();refreshTX();
+  show('En attente du code STREAM PRÊT (239) de l’ESP…');
+  log('START AM, '+n+' échantillons à '+txRate+' Hz, APWR '+apwr);
+  await sendCommand([START_AM,n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255,rateIndex,apwr]);
+ }catch(e){serialState='Échec démarrage : '+e.message;++faults;stopFlow();log(serialState);}
+};
+$('abortBtn').onclick=()=>{
+ if(!txActive)return;
+ // Streaming volontairement sourd aux commandes : pas d’octet STOP dans le flux.
+ txStopped=true;log('Envois suspendus : l’ESP retournera au CW après timeout ou underrun.');
+ show('Envois arrêtés. Attente du timeout matériel / audio de l’ESP.');
+};
+buttons();paintMetrics(true);
+if(!('serial' in navigator))log('Web Serial indisponible : essayer Chrome / Edge sur PC.');
+</script></body></html>
