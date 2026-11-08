@@ -1,0 +1,908 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSB Receiver HQ · ESP8266</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui,sans-serif;--bg:#131a20;--panel:#1e2932;--line:#41515b;--text:#eff4f6;--dim:#b6c3cc;--accent:#f2c682;--bad:#ffaaaa}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}main{max-width:890px;margin:auto;padding:34px 20px 48px}header{border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:18px}header span{font-size:.8rem;letter-spacing:.13em;color:var(--accent);text-transform:uppercase}h1{font-size:clamp(2rem,6vw,3.2rem);line-height:1.1;margin:6px 0 8px}h2{margin:0 0 12px;font-size:1.12rem}p{margin:6px 0}section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px;margin:12px 0}.dim,small,label,dt{color:var(--dim)}.grid,.meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px}label{display:flex;flex-direction:column;gap:4px;font-size:.87rem}input,button{font:inherit;color:var(--text);background:#17232b;border:1px solid #50616d;border-radius:7px;padding:8px 10px;min-width:0}input[type=range]{padding:0;accent-color:var(--accent)}button{cursor:pointer;font-weight:650}button:hover:not(:disabled){border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}.primary{color:#24190e;background:var(--accent);border-color:var(--accent)}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}.status{color:var(--accent);min-height:1.5em;margin-top:11px;overflow-wrap:anywhere}.status.error{color:var(--bad)}dl{margin:0}.meters div{background:#17232b;border:1px solid var(--line);border-radius:7px;padding:8px 10px}.meters dt{font-size:.79rem}.meters dd{margin:3px 0 0;font:600 .95rem/1.4 ui-monospace,monospace;overflow-wrap:anywhere}details{margin-top:12px;color:var(--dim)}summary{cursor:pointer}code{overflow-wrap:anywhere}
+select{font:inherit;color:var(--text);background:#17232b;border:1px solid #50616d;border-radius:7px;padding:8px 10px;min-width:0}.gain-grid{margin-top:9px}.file-check{flex-direction:row;align-items:center;gap:8px;margin-top:8px}.file-check input{accent-color:var(--accent)}
+.fine-tune{min-width:0;margin:14px 0 0;padding:10px 12px 12px;border:1px solid var(--line);border-radius:8px}.fine-tune legend{padding:0 5px;font-size:.9rem;font-weight:650}.fine-tune input[type=range]{width:100%;margin:2px 0}.fine-entry{display:flex;gap:6px;align-items:end;flex-wrap:wrap;margin:8px 0}.fine-entry label{max-width:10em}.fine-entry input{width:100%}.fine-tune .meters{margin-top:10px}
+.coarse-tune{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}.coarse-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.coarse-heading label{flex:1}.coarse-heading output{font:600 .95rem/1.4 ui-monospace,monospace}.coarse-heading button{padding:4px 9px;font-size:.85rem}.band-limit{color:var(--accent)}
+</style>
+<main>
+  <header><span>Récepteur · ESP8266</span><h1>SSB Receiver HQ</h1><p class="dim">L’ESP8266 fournit le signal I/Q du canal à 48 kéch/s. Le navigateur sélectionne la bande latérale et démodule la BLU.</p></header>
+  <section aria-labelledby="radioTitle">
+    <h2 id="radioTitle">Accord radio</h2>
+    <div class="grid">
+      <label>Accord du récepteur (MHz)<input id="frequency" value="2442,287" inputmode="decimal" spellcheck="false" aria-describedby="carrierHelp"></label>
+      <label>Volume d’écoute <output id="volumeLabel" for="volume">80 %</output><input id="volume" type="range" min="0" max="100" value="80"></label>
+    </div>
+    <p id="carrierHelp"><small>Sur le banc, l’accord de départ est 2442,287 MHz. Avec SSBTestv1, lance la réception pendant le préchauffage CW pour capter le repère avant la BLU.</small></p>
+    <div class="grid gain-grid">
+      <label>Bande latérale<select id="sideband"><option value="USB">USB · supérieure</option><option value="LSB">LSB · inférieure</option></select></label>
+      <label>Largeur audio<select id="bandwidth"><option value="2400">2,4 kHz</option><option value="3000">3 kHz</option><option value="4500">4,5 kHz</option><option value="6000">6 kHz</option><option value="8000">8 kHz</option><option value="10000">10 kHz</option><option value="12000" selected>12 kHz</option><option value="14000">14 kHz</option></select></label>
+      <label>Correction d’accord<select id="tracking"><option value="auto" selected>Suivi automatique (AFC)</option><option value="fixed">Base fixe</option></select></label>
+    </div>
+    <fieldset class="fine-tune" aria-describedby="fineHelp">
+      <legend>Accord en direct</legend>
+      <div class="coarse-tune">
+        <div class="coarse-heading">
+          <label for="coarseSlider">Réglage grossier (pas de 100 Hz)</label>
+          <output id="coarseOffset" for="coarseSlider" aria-live="off">0 Hz</output>
+          <button id="coarseReset" type="button" aria-label="Ramener le réglage grossier à zéro">Zéro</button>
+        </div>
+        <input id="coarseSlider" type="range" min="-12000" max="12000" step="100" value="0">
+      </div>
+      <label for="offsetSlider">Réglage fin (pas de 5 Hz)</label>
+      <input id="offsetSlider" type="range" min="-2500" max="2500" step="5" value="0">
+      <div class="fine-entry">
+        <button id="offsetDown" type="button" aria-label="Diminuer le réglage manuel de 1 Hz">−1 Hz</button>
+        <label for="offset">Réglage fin (Hz)<input id="offset" type="number" min="-2500" max="2500" step="1" value="0"></label>
+        <button id="offsetUp" type="button" aria-label="Augmenter le réglage manuel de 1 Hz">+1 Hz</button>
+        <button id="offsetReset" type="button" aria-label="Ramener le réglage manuel à zéro">Remettre à zéro</button>
+      </div>
+      <p id="fineHelp"><small>Les réglages grossier et fin s’ajoutent à la base d’accord pendant l’écoute, avec ou sans suivi automatique. Les boutons et le champ numérique affinent l’accord au hertz près.</small></p>
+      <dl class="meters">
+        <div><dt>Base d’accord (AFC ou fixe)</dt><dd id="baseOffset">—</dd></div>
+        <div><dt>Réglage fin</dt><dd id="manualTrim">0 Hz</dd></div>
+        <div><dt>Correction appliquée</dt><dd id="appliedOffset">—</dd></div>
+        <div><dt>Fréquence corrigée</dt><dd id="correctedFrequency">—</dd></div>
+      </dl>
+      <p id="tuningLimit" class="band-limit" role="status" hidden><small>La correction totale est limitée à ±18 kHz autour du centre accordé.</small></p>
+      <p id="bandLimit" class="band-limit" role="status" hidden><small>Une partie de la bande latérale dépasse la plage I/Q utile (±18 kHz) et peut être atténuée.</small></p>
+    </fieldset>
+    <details><summary>Référence de suivi</summary>
+      <div class="grid gain-grid"><label>Tonalité connue (Hz)<input id="referenceTone" type="number" min="0" max="14000" step="1" value="0"></label></div>
+      <p><small>Laisse 0 pour la voix ou la musique. Saisis la fréquence d’une tonalité de test seulement si tu la connais.</small></p>
+    </details>
+    <details><summary>Gain radio</summary>
+      <div class="grid gain-grid">
+        <label>Réglage du gain<select id="gainMode"><option value="AUTO">Automatique</option><option value="MANUAL" selected>Manuel</option></select></label>
+        <label>Indice RF<select id="rfGain"><option selected>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+        <label>Indice VGA<select id="vgaGain"><option selected>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
+      </div>
+      <p><small>Le récepteur applique ce réglage au démarrage de l’écoute radio. Le volume d’écoute agit séparément.</small></p>
+    </details>
+    <div class="actions"><button id="connect">Ouvrir le port</button><button id="start" class="primary" disabled>Recevoir</button><button id="stop" disabled>Arrêter</button><button id="close" disabled>Fermer le port</button></div>
+    <p id="status" class="status" role="status">Port fermé.</p>
+  </section>
+  <section aria-labelledby="qualityTitle">
+    <h2 id="qualityTitle">Audio et qualité de liaison</h2>
+    <dl class="meters">
+      <div><dt>Centre accordé</dt><dd id="actual">—</dd></div><div><dt>Format reçu</dt><dd id="rate">—</dd></div>
+      <div><dt>Suivi d’accord</dt><dd id="trackingState">—</dd></div><div><dt>Confiance du suivi</dt><dd id="confidence">—</dd></div>
+      <div><dt>Gain radio demandé</dt><dd id="gainUsed">—</dd></div>
+      <div><dt>Niveau PCM RMS</dt><dd id="rms">—</dd></div><div><dt>Crête PCM</dt><dd id="peak">—</dd></div>
+      <div><dt>Trames valides</dt><dd id="frames">0</dd></div><div><dt>Erreurs CRC</dt><dd id="crc">0</dd></div>
+      <div><dt>Échantillons perdus au transport</dt><dd id="missing">0</dd></div><div><dt>Trous de transport et maximum</dt><dd id="gaps">0 · 0 ms</dd></div>
+      <div><dt>Échantillons marqués invalides</dt><dd id="invalid">0</dd></div><div><dt>Trous signalés et maximum</dt><dd id="acqGaps">0 · 0 ms</dd></div>
+      <div><dt>Tampon audio</dt><dd id="buffer">—</dd></div><div><dt>Interruptions audio</dt><dd id="underruns">0</dd></div>
+      <div><dt>Échantillons de lecture écartés</dt><dd id="discarded">0</dd></div><div><dt>Trames hors ordre</dt><dd id="late">0</dd></div><div><dt>Erreurs de lecture série</dt><dd id="serialErrors">0</dd></div>
+    </dl>
+    <details><summary>Dernier message de l’ESP8266</summary><code id="deviceMessage">—</code></details>
+  </section>
+  <section aria-labelledby="fileTitle">
+    <h2 id="fileTitle">Essai hors ligne</h2>
+    <label>Fichier I/Q 10 bits, 48 kéch/s complexes<input id="file" type="file" accept=".iq10,.bin,application/octet-stream"></label>
+    <p><small>Ce mode lit des paires I/Q 10 bits signées, compactées sur cinq octets par bloc de deux paires. Les paires réservées aux pertes sont masquées comme en réception directe.</small></p>
+    <div class="actions"><button id="playFile" disabled>Lire le fichier</button><button id="stopFile" disabled>Arrêter le fichier</button></div>
+  </section>
+  <p class="dim"><small>Ouvre le fichier dans Chrome ou Edge sur l’ordinateur relié à la carte de réception. Web Serial à 1,5 Mbaud, 8N2.</small></p>
+</main>
+<script id="ssbDspSource">
+(() => {
+  'use strict';
+
+  const RATE=48000, FFT_SIZE=8192, BIN=RATE/FFT_SIZE, TAU=2*Math.PI;
+  const CW_ALIAS=78125-96000;
+  const FIR_LENGTH=511, HALF_FIR=FIR_LENGTH>>1;
+  const RING=512, PCM_SCALE=1/2047;
+  const MAX_COARSE=12000, MAX_TRIM=2500, IQ_PASSBAND_HZ=18000;
+  const TUNING_SLEW_SAMPLES=RATE/50;
+  const clamp=(value,low,high)=>Math.max(low,Math.min(high,value));
+  const sinc=x=>x===0 ? 1 : Math.sin(Math.PI*x)/(Math.PI*x);
+  const window=Float64Array.from({length:FFT_SIZE},(_,i)=>.5-.5*Math.cos(TAU*i/(FFT_SIZE-1)));
+  const reverse=Uint16Array.from({length:FFT_SIZE},(_,i)=>{
+    let result=0;
+    for(let size=FFT_SIZE;size>1;size>>=1) { result=(result<<1)|(i&1); i>>=1; }
+    return result;
+  });
+  const fftCos=Float64Array.from({length:FFT_SIZE/2},(_,i)=>Math.cos(TAU*i/FFT_SIZE));
+  const fftSin=Float64Array.from({length:FFT_SIZE/2},(_,i)=>-Math.sin(TAU*i/FFT_SIZE));
+
+  function fft(real,imag) {
+    for(let size=2;size<=FFT_SIZE;size<<=1) {
+      const half=size>>1, stride=FFT_SIZE/size;
+      for(let start=0;start<FFT_SIZE;start+=size) {
+        for(let n=0;n<half;n++) {
+          const a=start+n,b=a+half,k=n*stride;
+          const r=real[b]*fftCos[k]-imag[b]*fftSin[k];
+          const i=real[b]*fftSin[k]+imag[b]*fftCos[k];
+          real[b]=real[a]-r; imag[b]=imag[a]-i;
+          real[a]+=r; imag[a]+=i;
+        }
+      }
+    }
+  }
+
+  class Spectrum {
+    constructor() {
+      this.real=new Float64Array(FFT_SIZE);
+      this.imag=new Float64Array(FFT_SIZE);
+      this.power=new Float64Array(FFT_SIZE);
+      this.reset();
+    }
+    reset() { this.length=0; this.energy=0; this.erased=0; }
+    sample(i,q,missing) {
+      const n=this.length++, at=reverse[n], weight=window[n];
+      this.real[at]=i*weight; this.imag[at]=q*weight;
+      this.energy+=i*i+q*q;
+      if(missing) this.erased++;
+      if(this.length!==FFT_SIZE) return false;
+      const audible=this.erased<FFT_SIZE/16 && this.energy>FFT_SIZE*4;
+      this.reset();
+      if(!audible) return null;
+      fft(this.real,this.imag);
+      let total=0;
+      const noise=[];
+      for(let k=0;k<FFT_SIZE;k++) {
+        const value=this.real[k]**2+this.imag[k]**2;
+        this.power[k]=value;
+        const f=Math.min(k,FFT_SIZE-k)*BIN;
+        if(f>=28 && f<=22000) total+=value;
+        if(f>100 && f<21500 && k%19===0) noise.push(value);
+      }
+      noise.sort((a,b)=>a-b);
+      this.total=total;
+      this.noise=Math.max(1,noise[noise.length>>1]);
+      return true;
+    }
+    line(bin) {
+      const at=bin&(FFT_SIZE-1), power=this.power;
+      const middle=power[at], left=power[(at-1)&(FFT_SIZE-1)], right=power[(at+1)&(FFT_SIZE-1)];
+      if(middle<left || middle<right) return null;
+      const l=Math.log(Math.max(1,left)), m=Math.log(Math.max(1,middle)), r=Math.log(Math.max(1,right));
+      const curvature=l+r-2*m;
+      const fraction=curvature<0 ? clamp(.5*(l-r)/curvature,-.5,.5) : 0;
+      return {frequency:(bin+fraction)*BIN,power:middle,
+              strength:(left+middle+right)/Math.max(1,this.total),snr:middle/this.noise};
+    }
+    strongest(lo,hi) {
+      let best=null;
+      for(let bin=Math.ceil(lo/BIN);bin<=Math.floor(hi/BIN);bin++) {
+        const line=this.line(bin);
+        if(line && (!best || line.power>best.power)) best=line;
+      }
+      return best;
+    }
+    cluster(line,radius) {
+      const center=Math.round(line.frequency/BIN);
+      let power=0, weighted=0;
+      for(let bin=center-radius;bin<=center+radius;bin++) {
+        const energy=this.power[bin&(FFT_SIZE-1)];
+        power+=energy; weighted+=energy*bin;
+      }
+      return {frequency:weighted*BIN/power,strength:power/Math.max(1,this.total)};
+    }
+    programme(center,side,bandwidth) {
+      const low=center+side*280, high=center+side*Math.min(bandwidth,10000);
+      const points=[];
+      for(let bin=Math.ceil(Math.min(low,high)/BIN);bin<=Math.floor(Math.max(low,high)/BIN);bin++) {
+        const at=bin&(FFT_SIZE-1);
+        if(this.power[at]<this.noise*18) continue;
+        const line=this.line(bin);
+        if(line && line.strength>.002) points.push(line);
+      }
+      points.sort((a,b)=>b.power-a.power);
+      return points.slice(0,14);
+    }
+  }
+
+  // A common translation across multiple resolved spectral lines is evidence
+  // of relative drift. Unrelated audio peaks and ambiguous matches are ignored.
+  function commonShift(previous,current) {
+    const pairs=[];
+    for(const a of previous) {
+      let best=null;
+      for(const b of current) {
+        const shift=b.frequency-a.frequency, ratio=b.power/a.power;
+        if(Math.abs(shift)>48 || ratio<.30 || ratio>3.3) continue;
+        if(!best || Math.abs(shift)<Math.abs(best.shift)) best={shift,frequency:a.frequency,point:b};
+      }
+      if(best && !pairs.some(pair=>pair.point===best.point)) pairs.push(best);
+    }
+    let coherent=[];
+    for(const pair of pairs) {
+      const same=pairs.filter(other=>Math.abs(other.shift-pair.shift)<4.5);
+      if(same.length>coherent.length) coherent=same;
+    }
+    if(coherent.length<3 || coherent.length<.6*pairs.length) return null;
+    const frequencies=coherent.map(pair=>pair.frequency);
+    if(Math.max(...frequencies)-Math.min(...frequencies)<380) return null;
+    return coherent.reduce((total,pair)=>total+pair.shift,0)/coherent.length;
+  }
+
+  class FrequencyTracker {
+    constructor() {
+      this.spectrum=new Spectrum();
+      this.reset(0);
+    }
+    reset(seed) {
+      this.spectrum.reset();
+      this.offset=seed; this.seed=seed; this.anchored=false;
+      this.lastUpdate=-Infinity; this.source=null; this.confidence=0;
+      this.candidate=null; this.previousPeaks=[]; this.previousShift=null;
+    }
+    interrupt() {
+      this.spectrum.reset();
+      this.candidate=null; this.previousPeaks=[]; this.previousShift=null;
+    }
+    accept(method,value,confidence,index,count,tolerance,minimumMotion=0) {
+      const previous=this.candidate;
+      const agrees=previous?.method===method && Math.abs(previous.value-value)<tolerance;
+      const hits=agrees ? previous.hits+1 : 1;
+      const firstValue=agrees ? previous.firstValue : value;
+      this.candidate={method,value,hits,firstValue};
+      if(hits<count || Math.abs(value-firstValue)<minimumMotion) return false;
+      const first=!this.anchored || this.source!==method;
+      const change=value-this.offset;
+      const predict=agrees ? .5*clamp(value-previous.value,-75,75) : 0;
+      this.offset=clamp(this.offset+(first ? change : .72*(change+predict)),-12000,12000);
+      this.source=method; this.confidence=confidence;
+      this.anchored=true; this.lastUpdate=index;
+      this.previousPeaks=[]; this.previousShift=null;
+      return true;
+    }
+    sample(i,q,index,side,bandwidth,tone,missing=false) {
+      const valid=this.spectrum.sample(i,q,missing);
+      if(valid===false) return;
+      if(valid===null) {
+        this.candidate=null; this.previousPeaks=[]; this.previousShift=null;
+        return;
+      }
+      const spec=this.spectrum;
+      const expected=CW_ALIAS+(this.anchored?this.offset:this.seed);
+      const span=this.anchored ? 650 : 5300;
+      // Guard the entire possible LSB audio band, regardless of the
+      // narrower audio filter selected for listening.
+      const upper=side<0 ? Math.min(-14500,this.anchored?this.offset-14500:this.seed-15100) : -14500;
+      const cw=spec.strongest(Math.max(-22100,expected-span),Math.min(upper,expected+span));
+      if(cw && cw.snr>120) {
+        // A cold crystal can chirp by several FFT bins during one window.
+        // Integrate only around the out-of-band marker.
+        const cluster=spec.cluster(cw,15);
+        if(cluster.strength>.82) {
+          const ambiguous=side<0 && !this.anchored && cluster.frequency>this.seed-17000;
+          // In the overlap with a mistuned upper audio edge, require a
+          // moving preheat marker before treating it as an absolute anchor.
+          this.accept('CW',cluster.frequency-CW_ALIAS,.98,index,ambiguous?5:3,220,ambiguous?18:0);
+          return;
+        }
+      }
+      if(tone) {
+        const center=this.offset+side*tone, span=this.anchored?1200:3600;
+        const ref=spec.strongest(center-span,center+span);
+        if(ref && ref.strength>.55 && ref.snr>90) {
+          this.accept('tone',ref.frequency-side*tone,.96,index,3,135);
+          return;
+        }
+      }
+      this.candidate=null;
+      const peaks=spec.programme(this.offset,side,bandwidth);
+      const shift=commonShift(this.previousPeaks,peaks);
+      this.previousPeaks=peaks;
+      if(this.anchored && shift!==null && this.previousShift!==null &&
+          Math.abs(shift-this.previousShift)<6 && Math.abs(shift)>.4) {
+        this.offset=clamp(this.offset+.95*shift,this.seed-6000,this.seed+6000);
+        this.source='relative'; this.confidence=.64; this.lastUpdate=index;
+      }
+      this.previousShift=shift;
+    }
+    stats(index) {
+      const age=(index-this.lastUpdate)/RATE;
+      if(!this.anchored) return {trackingState:'Recherche de repère',confidence:0,method:null};
+      if(age>.58) return {trackingState:'Dernière correction conservée',confidence:Math.max(.2,this.confidence*Math.exp(-age/4)),method:this.source};
+      const labels={CW:'Repère CW verrouillé',tone:'Tonalité de référence suivie',relative:'Dérive spectrale suivie'};
+      return {trackingState:labels[this.source],confidence:this.confidence,method:this.source};
+    }
+  }
+
+  class SsbDecoder {
+    constructor(options={}) {
+      if(options.sampleRate!==undefined && options.sampleRate!==RATE) throw Error('Le décodeur exige 48 kéch/s I/Q.');
+      this.sampleIndex=0;
+      this.onGap=options.onGap;
+      this.tracker=new FrequencyTracker();
+      this.iHistory=new Float64Array(2*RING);
+      this.qHistory=new Float64Array(2*RING);
+      this.position=0; this.phaseCos=1; this.phaseSin=0;
+      this.stepCos=1; this.stepSin=0; this.appliedOffset=0;
+      this.fixedBaseOffset=0; this.targetOffset=0; this.slewRemaining=0; this.slewStep=0;
+      this.lastI=0; this.lastQ=0; this.erasure=0;
+      this.peak=0; this.squared=0; this.valid=0;
+      this.configure(options);
+    }
+    configure(options={}) {
+      const sideband=options.sideband ?? this.sideband ?? 'USB';
+      const bandwidthHz=clamp(Number(options.bandwidthHz ?? this.bandwidthHz ?? 3000),1800,14000);
+      const tracking=options.tracking ?? this.tracking ?? 'auto';
+      const coarseOffsetHz=Number(options.coarseOffsetHz ?? this.coarseHz ?? 0);
+      const offsetHz=Number(options.offsetHz ?? this.trimHz ?? 0);
+      const referenceToneHz=clamp(Number(options.referenceToneHz ?? this.referenceToneHz ?? 0),0,14000);
+      if(!['USB','LSB'].includes(sideband) || !['auto','fixed'].includes(tracking) ||
+          ![bandwidthHz,coarseOffsetHz,offsetHz,referenceToneHz].every(Number.isFinite)) throw Error('Réglages SSB invalides.');
+      const needsFilter=sideband!==this.sideband || bandwidthHz!==this.bandwidthHz;
+      const changingMode=this.tracking!==undefined && tracking!==this.tracking;
+      if(changingMode) {
+        // Freeze the oscillator's actual correction, including a partially
+        // completed slew. Keep both manual adjustments separate from AFC.
+        const base=this.appliedOffset-this.coarseHz-this.trimHz;
+        if(tracking==='fixed') this.fixedBaseOffset=base;
+        else this.tracker.offset=base;
+      }
+      if(changingMode || sideband!==this.sideband || referenceToneHz!==this.referenceToneHz) this.tracker.interrupt();
+      this.sideband=sideband; this.bandwidthHz=bandwidthHz; this.side=sideband==='USB'?1:-1;
+      this.tracking=tracking; this.referenceToneHz=referenceToneHz;
+      this.coarseHz=clamp(coarseOffsetHz,-MAX_COARSE,MAX_COARSE);
+      this.trimHz=clamp(offsetHz,-MAX_TRIM,MAX_TRIM);
+      if(needsFilter) this.setFilter();
+      this.retune();
+    }
+    setFilter() {
+      const lower=90, upper=this.bandwidthHz;
+      const center=this.side*(upper+lower)/2, width=(upper-lower)/2;
+      this.filterR=new Float64Array(HALF_FIR);
+      this.filterI=new Float64Array(HALF_FIR);
+      this.filterCenter=2*width/RATE;
+      for(let i=0;i<HALF_FIR;i++) {
+        const distance=i-HALF_FIR;
+        const angle=TAU*i/(FIR_LENGTH-1);
+        const tap=this.filterCenter*sinc(this.filterCenter*distance)*(.42-.5*Math.cos(angle)+.08*Math.cos(2*angle));
+        const phase=TAU*center*distance/RATE;
+        this.filterR[i]=tap*Math.cos(phase); this.filterI[i]=tap*Math.sin(phase);
+      }
+    }
+    get baseOffsetHz() {
+      return this.tracking==='fixed' ? this.fixedBaseOffset : this.tracker.offset;
+    }
+    retune() {
+      const offset=clamp(this.baseOffsetHz+this.coarseHz+this.trimHz,-IQ_PASSBAND_HZ,IQ_PASSBAND_HZ);
+      if(offset===this.targetOffset) return;
+      this.targetOffset=offset;
+      if(!this.sampleIndex || offset===this.appliedOffset) {
+        this.slewRemaining=0;
+        this.applyOffset(offset);
+        return;
+      }
+      this.slewRemaining=TUNING_SLEW_SAMPLES;
+      this.slewStep=(offset-this.appliedOffset)/TUNING_SLEW_SAMPLES;
+    }
+    applyOffset(offset) {
+      this.appliedOffset=offset;
+      const angle=-TAU*offset/RATE;
+      this.stepCos=Math.cos(angle); this.stepSin=Math.sin(angle);
+    }
+    render(i,q) {
+      if(this.slewRemaining) {
+        this.slewRemaining--;
+        this.applyOffset(this.slewRemaining ? this.appliedOffset+this.slewStep : this.targetOffset);
+      }
+      const cos=this.phaseCos,sin=this.phaseSin;
+      this.phaseCos=cos*this.stepCos-sin*this.stepSin;
+      this.phaseSin=sin*this.stepCos+cos*this.stepSin;
+      if((++this.sampleIndex&4095)===0) {
+        const magnitude=Math.hypot(this.phaseCos,this.phaseSin);
+        this.phaseCos/=magnitude; this.phaseSin/=magnitude;
+      }
+      const pos=this.position, ri=i*cos-q*sin, rq=i*sin+q*cos;
+      const a=this.iHistory,b=this.qHistory;
+      a[pos]=a[pos+RING]=ri; b[pos]=b[pos+RING]=rq;
+      this.position=(pos+1)&(RING-1);
+      let lo=pos+RING-(FIR_LENGTH-1),hi=pos+RING, value=0;
+      const hr=this.filterR,hq=this.filterI;
+      for(let t=0;t<HALF_FIR;t++,lo++,hi--) value+=hr[t]*(a[lo]+a[hi])-hq[t]*(b[hi]-b[lo]);
+      value=(value+this.filterCenter*a[lo])*PCM_SCALE;
+      this.peak=Math.max(this.peak,Math.abs(value));
+      this.squared+=value*value;
+      return value;
+    }
+    track(i,q,missing=false) {
+      const before=this.tracker.offset;
+      this.tracker.sample(i,q,this.sampleIndex,this.side,this.bandwidthHz,this.referenceToneHz,missing);
+      if(this.tracker.offset!==before) this.retune();
+    }
+    missing() {
+      this.erasure++;
+      if(this.tracking==='auto') {
+        if(this.erasure<=256) this.track(0,0,true);
+        if(this.erasure===257) this.tracker.interrupt();
+      }
+      this.lastI*=.97; this.lastQ*=.97;
+      return this.render(this.lastI,this.lastQ);
+    }
+    process(iq,erasures=false) {
+      const pcm=new Float32Array(iq.length);
+      for(let at=0;at<iq.length;at+=2) {
+        const i=iq[at],q=iq[at+1];
+        if(erasures && (i===-2048 || q===-2048)) {
+          let end=at+2;
+          while(end<iq.length && (iq[end]===-2048 || iq[end+1]===-2048)) end+=2;
+          this.onGap?.(this.sampleIndex,(end-at)/2);
+          for(;at<end;at+=2) pcm[at]=pcm[at+1]=this.missing();
+          at-=2;
+          continue;
+        }
+        if(this.tracking==='auto') this.track(i,q);
+        this.erasure=0; this.valid++;
+        this.lastI=i; this.lastQ=q;
+        pcm[at]=pcm[at+1]=this.render(i,q);
+      }
+      return pcm;
+    }
+    gap(count) {
+      if(!Number.isSafeInteger(count) || count<0) throw Error('Taille de perte I/Q invalide.');
+      const rendered=Math.min(count,RATE/4);
+      const pcm=new Float32Array(rendered*2);
+      for(let i=0;i<rendered;i++) pcm[2*i]=pcm[2*i+1]=this.missing();
+      const remaining=count-rendered;
+      if(remaining) {
+        const angle=-TAU*this.appliedOffset*remaining/RATE;
+        const c=Math.cos(angle),s=Math.sin(angle), previous=this.phaseCos;
+        this.phaseCos=previous*c-this.phaseSin*s;
+        this.phaseSin=this.phaseSin*c+previous*s;
+        this.sampleIndex+=remaining;
+      }
+      return pcm;
+    }
+    stats(reset=false) {
+      const baseOffsetHz=this.baseOffsetHz, offsetHz=this.appliedOffset;
+      const result={peak:this.peak,rms:Math.sqrt(this.squared/Math.max(1,this.valid)),
+                    valid:this.valid,offsetHz,baseOffsetHz,coarseHz:this.coarseHz,trimHz:this.trimHz,
+                    bandLimited:Math.abs(offsetHz+this.side*this.bandwidthHz)>IQ_PASSBAND_HZ,
+                    tuningLimited:Math.abs(baseOffsetHz+this.coarseHz+this.trimHz)>IQ_PASSBAND_HZ};
+      const state=this.tracking==='fixed' ? {trackingState:'Accord fixe',confidence:0,method:null} : this.tracker.stats(this.sampleIndex);
+      if(reset) { this.peak=0; this.squared=0; this.valid=0; }
+      return {...result,...state};
+    }
+  }
+
+  globalThis.SSB_DSP={SsbDecoder};
+})();
+</script>
+<script>
+'use strict';
+(() => {
+  const AUDIO_RATE=48000, BAUD=1500000, FRAME_BYTES=170, FRAME_SAMPLES=64, INVALID=-2048;
+  const crcTable=Uint16Array.from({length:256},(_,i)=>{
+    let crc=i<<8;
+    for(let b=0;b<8;b++) crc=((crc<<1)^(crc&0x8000?0x1021:0))&0xffff;
+    return crc;
+  });
+  function crc16(bytes,start=0,end=bytes.length) {
+    let crc=0xffff;
+    for(let i=start;i<end;i++) crc=((crc<<8)^crcTable[((crc>>8)^bytes[i])&255])&0xffff;
+    return crc;
+  }
+  function iq10(bytes) {
+    if(bytes.length%5) throw new Error('Le bloc I/Q doit contenir cinq octets pour deux paires.');
+    const out=new Int16Array(4*bytes.length/5);
+    let reservoir=0,bits=0,pos=0;
+    for(const byte of bytes) {
+      reservoir|=byte<<bits;
+      bits+=8;
+      if(bits>=10) {
+        // Sign extension, then restore the scale expected by the DSP.
+        out[pos++]=((reservoir&1023)<<22>>22)*4;
+        reservoir>>>=10; bits-=10;
+      }
+    }
+    return out;
+  }
+  class FrameParser {
+    constructor({onFrame=()=>{},onLine=()=>{},onError=()=>{}}={}) {
+      Object.assign(this,{onFrame,onLine,onError});
+      this.tail=new Uint8Array(0); this.line='';
+    }
+    ascii(byte) {
+      if(byte===10) {
+        const text=this.line.trim();
+        if(/^(?:OK|ERR|END)(?:\s|$)/.test(text)) this.onLine(text);
+        this.line='';
+      } else if(byte>=32&&byte<=126) this.line=(this.line+String.fromCharCode(byte)).slice(-240);
+      else if(byte!==13) this.line='';
+    }
+    feed(bytes) {
+      const b=new Uint8Array(this.tail.length+bytes.length);
+      b.set(this.tail); b.set(bytes,this.tail.length);
+      let i=0;
+      while(i<b.length) {
+        if(b[i]!==73) { this.ascii(b[i++]); continue; }
+        if(b.length-i<4) break;
+        if(b[i+1]!==81||b[i+2]!==49||b[i+3]!==48) { this.ascii(b[i++]); continue; }
+        if(b.length-i<FRAME_BYTES) break;
+        if(crc16(b,i+4,i+168)!==(b[i+168]|b[i+169]<<8)) { this.onError('crc'); this.line=''; i++; continue; }
+        const index=(b[i+4]|b[i+5]<<8|b[i+6]<<16|b[i+7]<<24)>>>0;
+        this.line=''; this.onFrame(index,iq10(b.subarray(i+8,i+168))); i+=FRAME_BYTES;
+      }
+      this.tail=b.slice(i);
+    }
+  }
+  const workletSource = String.raw`
+    class SSBPlayer extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.capacity=131072; this.mask=this.capacity-1;
+        this.ring=new Float32Array(this.capacity*2);
+        this.readAt=0; this.writeAt=0; this.live=true; this.running=false; this.done=false;
+        this.underruns=0; this.discarded=0; this.pulse=0; this.gain=0; this.correction=0;
+        this.port.onmessage=({data})=>{
+          if (data.type==='reset') {
+            this.readAt=this.writeAt=0; this.running=this.done=false; this.live=data.live;
+            this.underruns=this.discarded=this.pulse=0; this.gain=this.correction=0;
+          } else if (data.type==='end') this.done=true;
+          else if (data.type==='pcm') {
+            for (let j=0; j<data.values.length; j+=2) {
+              if (this.writeAt-Math.floor(this.readAt)>=this.capacity) {
+                this.readAt=Math.floor(this.readAt)+1; this.discarded++;
+              }
+              const i=(this.writeAt++&this.mask)*2;
+              this.ring[i]=data.values[j]; this.ring[i+1]=data.values[j+1];
+            }
+          }
+        };
+      }
+      process(inputs,outputs) {
+        const out=outputs[0];
+        const queued=this.writeAt-this.readAt;
+        if (!this.running && (queued>=3120 || (this.done && queued>1))) this.running=true;
+        const correction=this.live ? Math.max(-.009,Math.min(.009,(queued-4320)*.000002)) : 0;
+        this.correction+=(correction-this.correction)*.04;
+        const step=48000/sampleRate*(1+this.correction);
+        for (let i=0;i<out[0].length;i++) {
+          const j=Math.floor(this.readAt), d=this.readAt-j;
+          if (this.running && j+1<this.writeAt) {
+            this.gain=Math.min(1,this.gain+.003);
+            for (let c=0;c<2;c++) {
+              const x=this.ring[(j&this.mask)*2+c],y=this.ring[((j+1)&this.mask)*2+c];
+              out[c][i]=(x+(y-x)*d)*this.gain;
+            }
+            this.readAt+=step;
+          } else {
+            if (this.running && !this.done) this.underruns++;
+            if (this.done && this.running) this.port.postMessage({type:'ended'});
+            this.running=false; this.gain=0;
+          }
+        }
+        if (++this.pulse%75===0) this.port.postMessage({type:'stats',ms:(this.writeAt-this.readAt)/48,underruns:this.underruns,discarded:this.discarded});
+        return true;
+      }
+    }
+    registerProcessor('ssb-player',SSBPlayer);
+  `;
+
+  globalThis.SSBReceiverHQ={FrameParser,crc16,iq10,AUDIO_RATE,BAUD,FRAME_BYTES,FRAME_SAMPLES,INVALID};
+  if(typeof document==='undefined') return;
+  const $=id=>document.getElementById(id);
+  const fmt=new Intl.NumberFormat('fr-CA',{maximumFractionDigits:2}).format;
+  const mhz=new Intl.NumberFormat('fr-CA',{minimumFractionDigits:3,maximumFractionDigits:6}).format;
+  const hz=value=>Number.isFinite(value)?(value>0?'+':'')+fmt(value)+' Hz':'—';
+  const offsetInput=$('offset'), offsetSlider=$('offsetSlider'), coarseSlider=$('coarseSlider');
+  const trimMin=Number(offsetInput.min), trimMax=Number(offsetInput.max);
+  const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  const countTransport=()=>({frames:0,crc:0,missing:0,gaps:0,maxGap:0,invalid:0,acqGaps:0,maxAcqGap:0,late:0,discarded:0,serialErrors:0});
+  let port=null,reader=null,serialTask=null,serialParser=null,ctx=null,node=null,gainNode=null,decoder=null;
+  let state='idle', confirmed=false, identity='', token=0, expected=0, acqEnd=-1, acqSpan=0, pendingStart=null;
+  let writeTail=Promise.resolve();
+  let counters=countTransport(), audioStats={}, levels={}, chunks=[], chunkLength=0, centerHz=null;
+  let trimHz=0;
+  globalThis.SSBReceiverHQ.uiStats=()=>({state,baud:port?BAUD:0,rate:decoder?AUDIO_RATE:0,transport:{...counters},audio:{...audioStats},levels:{...levels},centerHz,correctedHz:centerHz===null?null:centerHz+(levels.offsetHz||0)});
+  Object.freeze(globalThis.SSBReceiverHQ);
+
+  function message(text,error=false) { $('status').textContent=text; $('status').classList.toggle('error',error); }
+  function buttons() {
+    $('connect').disabled=!!port||state!=='idle';
+    $('start').disabled=!port||state!=='idle'||!confirmed;
+    $('stop').disabled=!['starting','radio'].includes(state);
+    $('close').disabled=!port||['file','connecting','closing'].includes(state);
+    $('playFile').disabled=state!=='idle'||!$('file').files.length;
+    $('stopFile').disabled=state!=='file';
+    $('frequency').disabled=$('file').disabled=state!=='idle';
+    $('gainMode').disabled=state!=='idle';
+    $('rfGain').disabled=$('vgaGain').disabled=state!=='idle'||$('gainMode').value!=='MANUAL';
+  }
+  function volume() {
+    const percent=Number($('volume').value);
+    $('volumeLabel').textContent=fmt(percent)+' %';
+    if(gainNode) gainNode.gain.setTargetAtTime(percent/100,ctx.currentTime,.012);
+  }
+  async function readyAudio(live) {
+    if(!ctx) ctx=new AudioContext({latencyHint:'interactive'});
+    await ctx.resume();
+    if(!node) {
+      if(!ctx.audioWorklet) throw new Error('AudioWorklet est indisponible. Utilise Chrome ou Edge.');
+      await ctx.audioWorklet.addModule('data:text/javascript;charset=utf-8,'+encodeURIComponent(workletSource));
+      node=new AudioWorkletNode(ctx,'ssb-player',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2]});
+      node.port.onmessage=({data})=>{
+        if(data.type==='stats') audioStats=data;
+        if(data.type==='ended'&&state==='file') stopFile('Lecture terminée.');
+      };
+      gainNode=ctx.createGain(); gainNode.gain.value=Number($('volume').value)/100;
+      node.connect(gainNode).connect(ctx.destination);
+    }
+    audioStats={}; chunks=[]; chunkLength=0;
+    node.port.postMessage({type:'reset',live});
+  }
+  function silence() {
+    chunks=[]; chunkLength=0;
+    if(node) node.port.postMessage({type:'reset',live:true});
+  }
+  function flush() {
+    if(!chunkLength) return;
+    const audio=new Float32Array(chunkLength);
+    let at=0;
+    for(const chunk of chunks) { audio.set(chunk,at); at+=chunk.length; }
+    chunks=[]; chunkLength=0;
+    node.port.postMessage({type:'pcm',values:audio},[audio.buffer]);
+  }
+  function play(audio) {
+    if(!audio.length) return;
+    chunks.push(audio); chunkLength+=audio.length;
+    if(chunkLength>=960) flush();
+  }
+  function dspSettings() {
+    const referenceToneHz=Number($('referenceTone').value);
+    if(!Number.isFinite(referenceToneHz)||referenceToneHz<0||referenceToneHz>14000) throw new Error('Entre une référence entre 0 et 14 000 Hz.');
+    return {sideband:$('sideband').value,bandwidthHz:Number($('bandwidth').value),tracking:$('tracking').value,
+      coarseOffsetHz:coarseSlider.valueAsNumber,offsetHz:trimHz,referenceToneHz};
+  }
+  function requireDsp() {
+    const decoder=globalThis.SSB_DSP?.SsbDecoder;
+    if(!decoder) throw new Error('Le décodeur BLU est indisponible dans cette copie du fichier.');
+    return decoder;
+  }
+  function configure() {
+    acqEnd=-1; acqSpan=0;
+    const SsbDecoder=requireDsp();
+    decoder=new SsbDecoder({sampleRate:AUDIO_RATE,...dspSettings(),onGap:(index,count)=>{
+      if(index!==acqEnd) { counters.acqGaps++; acqSpan=0; }
+      acqEnd=index+count; acqSpan+=count; counters.invalid+=count;
+      counters.maxAcqGap=Math.max(counters.maxAcqGap,acqSpan);
+    }});
+    $('rate').textContent='I/Q 10 bits · 48 kéch/s';
+  }
+  function updateDsp() {
+    try { const settings=dspSettings(); if(decoder) decoder.configure(settings); }
+    catch(error) { message(error.message,true); }
+  }
+  function setTrim(value, fromNumber=false) {
+    if(!Number.isInteger(value)||value<trimMin||value>trimMax) return;
+    const changed=value!==trimHz;
+    trimHz=value;
+    if(!fromNumber) offsetInput.value=String(value);
+    offsetSlider.value=String(value);
+    $('manualTrim').textContent=hz(value);
+    $('offsetDown').disabled=value===trimMin;
+    $('offsetUp').disabled=value===trimMax;
+    if(changed&&decoder&&(state==='radio'||state==='file')) decoder.configure({offsetHz:trimHz});
+  }
+  function updateCoarse() {
+    const coarseOffsetHz=coarseSlider.valueAsNumber;
+    $('coarseOffset').textContent=hz(coarseOffsetHz);
+    if(decoder&&(state==='radio'||state==='file')) decoder.configure({coarseOffsetHz});
+  }
+  function frame(index,payload) {
+    if(state!=='radio') return;
+    const gap=(index-expected)>>>0;
+    if(gap>=0x80000000) { counters.late++; return; }
+    if(gap) {
+      counters.missing+=gap; counters.gaps++; counters.maxGap=Math.max(gap,counters.maxGap);
+      if(gap>AUDIO_RATE*.25) { counters.discarded+=gap; silence(); decoder.gap(gap); }
+      else play(decoder.gap(gap));
+    }
+    expected=(index+FRAME_SAMPLES)>>>0;
+    counters.frames++;
+    play(decoder.process(payload,true));
+  }
+  function line(text) {
+    const response=text.match(/^OK STATUS\s+(\S+)\b/);
+    if(response) identity=response[1];
+    if(/^OK STATUS SSBReceiverHQ\s+\d+\s+160\s+1500000\s+511$/.test(text)) confirmed=true;
+    if(state==='starting'&&pendingStart&&text==='OK GAIN '+pendingStart.gain) {
+      const start=pendingStart; pendingStart=null;
+      $('gainUsed').textContent=start.gain==='AUTO'?'Automatique':start.gain.replace(' ',' / ');
+      void command('START '+start.khz+' HQ\n',()=>state==='starting'&&start.id===token).catch(error=>{
+        if(state==='starting'&&start.id===token) void stopRadio(error.message,true);
+      });
+    }
+    const ok=text.match(/^OK START\s+(\d+)\s+48000\s+HQ$/i);
+    if(ok&&state==='starting') {
+      try { configure(); } catch(error) { void stopRadio(error.message,true); return; }
+      expected=0; centerHz=Number(ok[1]);
+      $('actual').textContent=mhz(centerHz/1e6)+' MHz';
+      state='radio'; buttons(); message('Réception BLU active.');
+    } else if(/^OK START\b/.test(text)&&state==='starting') {
+      void stopRadio('Format reçu incompatible avec l’I/Q 10 bits à 48 kéch/s.',true);
+    }
+    if(/^END(?:\s|$)/.test(text)&&['radio','stopping'].includes(state)) {
+      state='idle'; silence(); buttons(); message('Réception arrêtée.');
+    }
+    if(/^ERR(?:\s|$)/.test(text)&&state==='starting') {
+      pendingStart=null; state='idle'; silence(); buttons(); message(text,true);
+    }
+    $('deviceMessage').textContent=text;
+  }
+  function command(text,stillNeeded=()=>true) {
+    const own=port;
+    const job=writeTail.catch(()=>{}).then(async()=>{
+      if(!stillNeeded()) return;
+      if(port!==own||!own?.writable) throw new Error('Port série indisponible.');
+      const writer=own.writable.getWriter();
+      try { await writer.write(new TextEncoder().encode(text)); } finally { writer.releaseLock(); }
+    });
+    writeTail=job;
+    return job;
+  }
+  async function readSerial(own) {
+    try {
+      let ended=false;
+      while(port===own&&own.readable&&!ended) {
+        const local=own.readable.getReader(); reader=local;
+        try {
+          while(port===own) {
+            const {value,done}=await local.read();
+            if(done) { ended=true; break; }
+            if(value?.length) serialParser.feed(value);
+          }
+        } catch(error) {
+          if(port===own) { counters.serialErrors++; if(!own.readable) throw error; }
+        } finally { local.releaseLock(); if(reader===local) reader=null; }
+      }
+    } catch(error) { if(port===own) message('Port série interrompu · '+error.message,true); }
+    finally {
+      if(port===own) {
+        port=null; confirmed=false; pendingStart=null;
+        if(state!=='connecting') { state='idle'; silence(); buttons(); }
+        try { await own.close(); } catch(_) {}
+      }
+    }
+  }
+  async function disconnectSerial() {
+    const old=port, task=serialTask;
+    port=null; confirmed=false; serialTask=null; pendingStart=null;
+    if(reader) { try { await reader.cancel(); } catch(_) {} }
+    if(task) await task;
+    if(old) await old.close();
+  }
+  async function connect() {
+    if(!navigator.serial) { message('Web Serial est indisponible. Utilise Chrome ou Edge.',true); return; }
+    state='connecting'; confirmed=false; identity=''; buttons();
+    try {
+      const own=await navigator.serial.requestPort();
+      await own.open({baudRate:BAUD,dataBits:8,stopBits:2,parity:'none',flowControl:'none',bufferSize:65536});
+      port=own;
+      serialParser=new FrameParser({onFrame:frame,onLine:line,onError:()=>{if(state==='radio') counters.crc++;}});
+      serialTask=readSerial(own);
+      message('Vérification de la carte BLU…');
+      await wait(650);
+      for(let n=0;n<2&&port===own&&!confirmed&&!identity;n++) { await command('STATUS\n'); await wait(250); }
+      if(port===own&&!confirmed&&!identity) {
+        message('Réinitialisation de la carte BLU…');
+        try {
+          await own.setSignals({dataTerminalReady:false,requestToSend:true}); await wait(120);
+          if(port===own) await own.setSignals({dataTerminalReady:false,requestToSend:false});
+          await wait(850);
+          if(port===own) { await command('STATUS\n'); await wait(300); }
+        } catch(_) {}
+      }
+      if(confirmed&&port===own) message('SSB Receiver HQ prêt · 1,5 Mbaud, 8N2.');
+      else {
+        await disconnectSerial();
+        message(identity==='SSBReceiverHQ'?'Vérifie la configuration de la carte BLU à 160 MHz.':identity?'Ce port répond avec '+identity+'. Choisis le port de la carte BLU.':'Aucune réponse SSBReceiverHQ. Vérifie le port et le firmware RX.',true);
+      }
+    } catch(error) {
+      if(port) { try { await disconnectSerial(); } catch(_) {} }
+      message(error.name==='NotFoundError'?'Aucun port sélectionné.':'Connexion impossible · '+error.message,error.name!=='NotFoundError');
+    } finally { if(state==='connecting') state='idle'; buttons(); }
+  }
+  async function closePort() {
+    const active=port&&['starting','radio'].includes(state);
+    token++; pendingStart=null;
+    state='closing'; silence(); buttons();
+    if(active) { try { await command('!\n'); } catch(_) {} }
+    try { await disconnectSerial(); message('Port fermé.'); }
+    catch(error) { message('Fermeture incomplète · '+error.message,true); }
+    finally { state='idle'; buttons(); }
+  }
+  async function startRadio() {
+    const frequency=Number($('frequency').value.trim().replace(',','.'));
+    if(!Number.isFinite(frequency)||frequency<2400||frequency>2483.5) { message('Entre une fréquence entre 2400 et 2483,5 MHz.',true); return; }
+    const id=++token;
+    state='starting'; counters=countTransport(); levels={}; centerHz=null; buttons(); message('Accord du récepteur BLU…');
+    try {
+      requireDsp(); dspSettings();
+      await readyAudio(true);
+      if(state!=='starting'||id!==token) return;
+      const gain=$('gainMode').value==='AUTO'?'AUTO':$('rfGain').value+' '+$('vgaGain').value;
+      pendingStart={id,khz:Math.round(frequency*1000),gain};
+      await command('GAIN '+gain+'\n',()=>state==='starting'&&id===token);
+      setTimeout(()=>{if(state==='starting'&&id===token) void stopRadio('Aucune réponse de la carte BLU au réglage du gain ou à START.',true);},2600);
+    } catch(error) { pendingStart=null; state='idle'; buttons(); message(error.message,true); }
+  }
+  async function stopRadio(reason='',error=false) {
+    const id=++token; pendingStart=null;
+    state='stopping'; buttons(); silence();
+    try { await command('!\n'); } catch(e) { reason=reason||e.message; error=true; }
+    setTimeout(()=>{if(state==='stopping'&&token===id) { state='idle'; buttons(); if(!reason) message('Réception arrêtée.'); }},300);
+    if(reason) message(reason,error);
+  }
+  function stopFile(text) { token++; state='idle'; silence(); buttons(); message(text); }
+  async function startFile() {
+    const file=$('file').files[0];
+    if(!file) return;
+    if(/\.(?:iq12|mpx8|wav|mp3|s16le|pcm)$/i.test(file.name)||file.size<10||file.size%5||file.size>60*1024*1024) {
+      message('Choisis un fichier I/Q10 brut entre 10 octets et 60 Mo, avec cinq octets par bloc de deux paires.',true); return;
+    }
+    const id=++token;
+    state='file'; counters=countTransport(); levels={}; centerHz=null; buttons();
+    try {
+      requireDsp(); dspSettings();
+      await readyAudio(false);
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      if(state!=='file'||id!==token) return;
+      configure(); $('actual').textContent='Fichier'; $('gainUsed').textContent='—'; message('Lecture · '+file.name);
+      let read=0;
+      const blocks=bytes.length/5, started=ctx.currentTime;
+      function push() {
+        if(state!=='file'||id!==token) return;
+        const target=Math.min(blocks,Math.ceil((ctx.currentTime-started+.105)*AUDIO_RATE/2));
+        while(read<target) {
+          const next=Math.min(target,read+480);
+          play(decoder.process(iq10(bytes.subarray(5*read,5*next)),true)); read=next;
+        }
+        flush();
+        if(read<blocks) setTimeout(push,12);
+        else node.port.postMessage({type:'end'});
+      }
+      push();
+    } catch(error) { stopFile('Lecture impossible · '+error.message); }
+  }
+  for(const id of ['sideband','bandwidth','tracking','referenceTone']) $(id).onchange=updateDsp;
+  coarseSlider.oninput=updateCoarse;
+  $('coarseReset').onclick=()=>{ coarseSlider.value='0'; updateCoarse(); };
+  offsetSlider.oninput=()=>setTrim(offsetSlider.valueAsNumber);
+  offsetInput.oninput=()=>setTrim(offsetInput.valueAsNumber,true);
+  offsetInput.onchange=()=>{ offsetInput.value=String(trimHz); };
+  $('offsetDown').onclick=()=>setTrim(trimHz-1);
+  $('offsetUp').onclick=()=>setTrim(trimHz+1);
+  $('offsetReset').onclick=()=>setTrim(0);
+  $('volume').oninput=volume; $('file').onchange=buttons; $('gainMode').onchange=buttons;
+  $('connect').onclick=connect; $('start').onclick=startRadio; $('stop').onclick=()=>stopRadio(); $('close').onclick=closePort;
+  $('playFile').onclick=startFile; $('stopFile').onclick=()=>stopFile('Lecture arrêtée.');
+  const db=x=>x>0?fmt(20*Math.log10(x))+' dBFS':'—';
+  setInterval(()=>{
+    if(state==='radio') flush();
+    if(decoder&&(state==='radio'||state==='file')) levels=decoder.stats(true);
+    $('rms').textContent=db(levels.rms); $('peak').textContent=db(levels.peak);
+    const correction=Number.isFinite(levels.offsetHz)?levels.offsetHz:null;
+    $('baseOffset').textContent=hz(levels.baseOffsetHz);
+    $('appliedOffset').textContent=hz(levels.offsetHz);
+    const listening=state==='radio'||state==='file';
+    $('tuningLimit').hidden=!(listening&&levels.tuningLimited);
+    $('bandLimit').hidden=!(listening&&levels.bandLimited);
+    $('correctedFrequency').textContent=centerHz===null||correction===null?'—':mhz((centerHz+correction)/1e6)+' MHz';
+    $('trackingState').textContent=levels.trackingState||'—';
+    $('confidence').textContent=Number.isFinite(levels.confidence)?fmt(Math.max(0,Math.min(100,levels.confidence*100)))+' %':'—';
+    for(const key of ['frames','crc','missing','invalid','late','serialErrors']) $(key).textContent=fmt(counters[key]);
+    $('gaps').textContent=fmt(counters.gaps)+' · '+fmt(1000*counters.maxGap/AUDIO_RATE)+' ms';
+    $('acqGaps').textContent=fmt(counters.acqGaps)+' · '+fmt(1000*counters.maxAcqGap/AUDIO_RATE)+' ms';
+    $('buffer').textContent=audioStats.ms===undefined?'—':fmt(Math.max(0,audioStats.ms))+' ms';
+    $('underruns').textContent=fmt(audioStats.underruns||0);
+    $('discarded').textContent=fmt(counters.discarded+(audioStats.discarded||0));
+  },150);
+  setTrim(offsetInput.valueAsNumber);
+  updateCoarse();
+  buttons();
+})();
+</script>
+</html>
