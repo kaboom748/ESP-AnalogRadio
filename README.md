@@ -5,6 +5,8 @@
 <img width="1087" height="1011" alt="Capture d’écran 2026-11-07 145341" src="https://github.com/user-attachments/assets/f1d2ebef-0edf-4123-a1dd-574c613a6238" />
 <img width="1007" height="874" alt="2" src="https://github.com/user-attachments/assets/ccd4b288-7853-4c76-a9a0-d599a4caa745" />
 
+This project transmits AM and FM signals in the 2.4 GHz band, outside the tuning range of standard AM/FM radios. To receive these signals, use a 2.4 GHz-capable software-defined radio (SDR), such as a HackRF, and select the matching demodulation mode.
+
 Experimental **2.4 GHz analog radio transmitters for the ESP8266**. The collection includes amplitude modulation (AM), mono wideband FM (WFM), stereo FM with a 19 kHz pilot, and single-sideband transmission in USB and LSB. Each Web Serial build pairs an Arduino sketch with a browser player that turns a local audio file into a stream the ESP8266 can transmit.
 
 On the HackRF bench, the mono FM build reached **27.49 dB tone SNR**, and the stereo FM build measured **30.90 dB left-to-right separation** at 997 Hz. The measurement conditions and results for all four Web Serial builds are documented below.
