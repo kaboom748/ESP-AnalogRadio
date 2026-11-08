@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AM Receiver HQ · ESP8266</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui,sans-serif;--bg:#131a20;--panel:#1e2932;--line:#41515b;--text:#eff4f6;--dim:#b6c3cc;--accent:#f2c682;--bad:#ffaaaa}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}main{max-width:890px;margin:auto;padding:34px 20px 48px}header{border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:18px}header span{font-size:.8rem;letter-spacing:.13em;color:var(--accent);text-transform:uppercase}h1{font-size:clamp(2rem,6vw,3.2rem);line-height:1.1;margin:6px 0 8px}h2{margin:0 0 12px;font-size:1.12rem}p{margin:6px 0}section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px;margin:12px 0}.dim,small,label,dt{color:var(--dim)}.grid,.meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px}label{display:flex;flex-direction:column;gap:4px;font-size:.87rem}input,button{font:inherit;color:var(--text);background:#17232b;border:1px solid #50616d;border-radius:7px;padding:8px 10px;min-width:0}input[type=range]{padding:0;accent-color:var(--accent)}button{cursor:pointer;font-weight:650}button:hover:not(:disabled){border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}.primary{color:#24190e;background:var(--accent);border-color:var(--accent)}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}.status{color:var(--accent);min-height:1.5em;margin-top:11px;overflow-wrap:anywhere}.status.error{color:var(--bad)}dl{margin:0}.meters div{background:#17232b;border:1px solid var(--line);border-radius:7px;padding:8px 10px}.meters dt{font-size:.79rem}.meters dd{margin:3px 0 0;font:600 .95rem/1.4 ui-monospace,monospace;overflow-wrap:anywhere}details{margin-top:12px;color:var(--dim)}summary{cursor:pointer}code{overflow-wrap:anywhere}
+select{font:inherit;color:var(--text);background:#17232b;border:1px solid #50616d;border-radius:7px;padding:8px 10px;min-width:0}.gain-grid{margin-top:9px}.file-check{flex-direction:row;align-items:center;gap:8px;margin-top:8px}.file-check input{accent-color:var(--accent)}
+</style>
+<main>
+  <header><span>Récepteur · ESP8266</span><h1>AM Receiver HQ</h1><p class="dim">L’ESP8266 démodule l’AM et transmet l’audio mono PCM16 à 48 kéch/s. Le navigateur joue le même signal sur les deux voies.</p></header>
+  <section aria-labelledby="radioTitle">
+    <h2 id="radioTitle">Accord radio</h2>
+    <div class="grid">
+      <label>Accord du récepteur (MHz)<input id="frequency" value="2442,287" inputmode="decimal" spellcheck="false" aria-describedby="carrierHelp"></label>
+      <label>Volume d’écoute <output id="volumeLabel" for="volume">80 %</output><input id="volume" type="range" min="0" max="100" value="80"></label>
+    </div>
+    <p id="carrierHelp"><small>L’accord à 2442,287 MHz et le gain RF 0 / VGA 0 ont été mesurés sur les deux ESP du banc. Le canal 7 de l’émetteur AM est nominalement à 2442,3125 MHz. L’accord à saisir dépend de l’écart entre les oscillateurs des deux cartes.</small></p>
+    <details><summary>Gain radio</summary>
+      <div class="grid gain-grid">
+        <label>Réglage du gain<select id="gainMode"><option value="AUTO">Automatique</option><option value="MANUAL" selected>Manuel</option></select></label>
+        <label>Indice RF<select id="rfGain"><option selected>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+        <label>Indice VGA<select id="vgaGain"><option selected>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select></label>
+      </div>
+      <p><small>Le récepteur applique ce réglage au démarrage de l’écoute radio. Le volume d’écoute agit séparément.</small></p>
+    </details>
+    <div class="actions"><button id="connect">Ouvrir le port</button><button id="start" class="primary" disabled>Recevoir</button><button id="stop" disabled>Arrêter</button><button id="close" disabled>Fermer le port</button></div>
+    <p id="status" class="status" role="status">Port fermé.</p>
+  </section>
+  <section aria-labelledby="qualityTitle">
+    <h2 id="qualityTitle">Audio et qualité de liaison</h2>
+    <dl class="meters">
+      <div><dt>Centre accordé</dt><dd id="actual">—</dd></div><div><dt>Format reçu</dt><dd id="rate">—</dd></div>
+      <div><dt>Gain radio demandé</dt><dd id="gainUsed">—</dd></div>
+      <div><dt>Niveau PCM RMS</dt><dd id="rms">—</dd></div><div><dt>Crête PCM</dt><dd id="peak">—</dd></div>
+      <div><dt>Trames valides</dt><dd id="frames">0</dd></div><div><dt>Erreurs CRC</dt><dd id="crc">0</dd></div>
+      <div><dt>Échantillons perdus au transport</dt><dd id="missing">0</dd></div><div><dt>Trous de transport et maximum</dt><dd id="gaps">0 · 0 ms</dd></div>
+      <div><dt>Échantillons marqués invalides</dt><dd id="invalid">0</dd></div><div><dt>Trous signalés et maximum</dt><dd id="acqGaps">0 · 0 ms</dd></div>
+      <div><dt>Tampon audio</dt><dd id="buffer">—</dd></div><div><dt>Interruptions audio</dt><dd id="underruns">0</dd></div>
+      <div><dt>Échantillons de lecture écartés</dt><dd id="discarded">0</dd></div><div><dt>Trames hors ordre</dt><dd id="late">0</dd></div><div><dt>Erreurs de lecture série</dt><dd id="serialErrors">0</dd></div>
+    </dl>
+    <details><summary>Dernier message de l’ESP8266</summary><code id="deviceMessage">—</code></details>
+  </section>
+  <section aria-labelledby="fileTitle">
+    <h2 id="fileTitle">Essai hors ligne</h2>
+    <label>Fichier PCM16 signé, mono, 48 kHz, octets de poids faible en premier<input id="file" type="file" accept=".pcm,.s16,.s16le,.raw,.bin,application/octet-stream"></label>
+    <label class="file-check"><input id="fileErasures" type="checkbox"> Masquer les valeurs −32768 réservées aux pertes dans une capture ESP8266</label>
+    <p><small>Utilise un fichier audio brut PCM16. Le multiplex MPX8 et les conteneurs WAV sont incompatibles avec cette entrée.</small></p>
+    <div class="actions"><button id="playFile" disabled>Lire le fichier</button><button id="stopFile" disabled>Arrêter le fichier</button></div>
+  </section>
+  <p class="dim"><small>Ouvre le fichier dans Chrome ou Edge sur l’ordinateur relié à la carte de réception. Web Serial à 1,5 Mbaud, 8N2.</small></p>
+</main>
+<script>
+'use strict';
+(() => {
+  const AUDIO_RATE=48000, BAUD=1500000, FRAME_BYTES=138, FRAME_SAMPLES=64, INVALID=-32768;
+  const crcTable=Uint16Array.from({length:256},(_,i)=>{
+    let crc=i<<8;
+    for(let b=0;b<8;b++) crc=((crc<<1)^(crc&0x8000?0x1021:0))&0xffff;
+    return crc;
+  });
+  function crc16(bytes,start=0,end=bytes.length) {
+    let crc=0xffff;
+    for(let i=start;i<end;i++) crc=((crc<<8)^crcTable[((crc>>8)^bytes[i])&255])&0xffff;
+    return crc;
+  }
+  function pcm16(bytes) {
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+    const out=new Int16Array(bytes.length/2);
+    for(let i=0;i<out.length;i++) out[i]=view.getInt16(i*2,true);
+    return out;
+  }
+  class FrameParser {
+    constructor({onFrame=()=>{},onLine=()=>{},onError=()=>{}}={}) {
+      Object.assign(this,{onFrame,onLine,onError});
+      this.tail=new Uint8Array(0); this.line='';
+    }
+    ascii(byte) {
+      if(byte===10) {
+        const text=this.line.trim();
+        if(/^(?:OK|ERR|END)(?:\s|$)/.test(text)) this.onLine(text);
+        this.line='';
+      } else if(byte>=32&&byte<=126) this.line=(this.line+String.fromCharCode(byte)).slice(-240);
+      else if(byte!==13) this.line='';
+    }
+    feed(bytes) {
+      const b=new Uint8Array(this.tail.length+bytes.length);
+      b.set(this.tail); b.set(bytes,this.tail.length);
+      let i=0;
+      while(i<b.length) {
+        if(b[i]!==65) { this.ascii(b[i++]); continue; }
+        if(b.length-i<4) break;
+        if(b[i+1]!==77||b[i+2]!==48||b[i+3]!==49) { this.ascii(b[i++]); continue; }
+        if(b.length-i<FRAME_BYTES) break;
+        if(crc16(b,i+4,i+136)!==(b[i+136]|b[i+137]<<8)) { this.onError('crc'); this.line=''; i++; continue; }
+        const index=(b[i+4]|b[i+5]<<8|b[i+6]<<16|b[i+7]<<24)>>>0;
+        this.line=''; this.onFrame(index,pcm16(b.subarray(i+8,i+136))); i+=FRAME_BYTES;
+      }
+      this.tail=b.slice(i);
+    }
+  }
+  class MonoDecoder {
+    constructor({onGap=null}={}) {
+      this.onGap=onGap; this.sampleIndex=0; this.pending=0; this.last=0; this.fadeIn=0;
+      this.peak=0; this.power=0; this.valid=0;
+    }
+    gap(count) { if(Number.isSafeInteger(count)&&count>0) { this.pending+=count; this.sampleIndex+=count; } }
+    conceal(out,at,target) {
+      for(let i=0;i<this.pending;i++) {
+        const p=(i+1)/(this.pending+1);
+        const v=this.pending<=288 ? this.last+(target-this.last)*p : this.last*Math.max(0,1-(i+1)/144)+target*Math.max(0,1-(this.pending-i)/144);
+        out[at++]=v; out[at++]=v;
+      }
+      this.pending=0;
+      return at;
+    }
+    process(samples,erasures=false) {
+      const out=new Float32Array(2*(this.pending+samples.length));
+      let at=0;
+      for(let n=0;n<samples.length;n++) {
+        if(erasures&&samples[n]===INVALID) {
+          let end=n+1;
+          while(end<samples.length&&samples[end]===INVALID) end++;
+          this.onGap?.(this.sampleIndex,end-n); this.gap(end-n); n=end-1;
+          if(this.pending>=960) { at=this.conceal(out,at,0); this.last=0; this.fadeIn=144; }
+          continue;
+        }
+        const x=Math.max(-1,samples[n]/32767);
+        this.peak=Math.max(this.peak,Math.abs(x)); this.power+=x*x; this.valid++; this.sampleIndex++;
+        if(this.pending) { at=this.conceal(out,at,x); this.fadeIn=0; }
+        const gain=this.fadeIn ? 1-(--this.fadeIn)/144 : 1;
+        this.last=x*gain;
+        out[at++]=this.last; out[at++]=this.last;
+      }
+      return out.subarray(0,at);
+    }
+    stats(reset=false) {
+      const result={peak:this.peak,rms:this.valid?Math.sqrt(this.power/this.valid):0,valid:this.valid};
+      if(reset) this.peak=this.power=this.valid=0;
+      return result;
+    }
+  }
+
+  const workletSource = String.raw`
+    class AMPlayer extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.capacity=131072; this.mask=this.capacity-1;
+        this.ring=new Float32Array(this.capacity*2);
+        this.readAt=0; this.writeAt=0; this.live=true; this.running=false; this.done=false;
+        this.underruns=0; this.discarded=0; this.pulse=0; this.gain=0; this.correction=0;
+        this.port.onmessage=({data})=>{
+          if (data.type==='reset') {
+            this.readAt=this.writeAt=0; this.running=this.done=false; this.live=data.live;
+            this.underruns=this.discarded=this.pulse=0; this.gain=this.correction=0;
+          } else if (data.type==='end') this.done=true;
+          else if (data.type==='pcm') {
+            for (let j=0; j<data.values.length; j+=2) {
+              if (this.writeAt-Math.floor(this.readAt)>=this.capacity) {
+                this.readAt=Math.floor(this.readAt)+1; this.discarded++;
+              }
+              const i=(this.writeAt++&this.mask)*2;
+              this.ring[i]=data.values[j]; this.ring[i+1]=data.values[j+1];
+            }
+          }
+        };
+      }
+      process(inputs,outputs) {
+        const out=outputs[0];
+        const queued=this.writeAt-this.readAt;
+        if (!this.running && (queued>=3120 || (this.done && queued>1))) this.running=true;
+        const correction=this.live ? Math.max(-.009,Math.min(.009,(queued-4320)*.000002)) : 0;
+        this.correction+=(correction-this.correction)*.04;
+        const step=48000/sampleRate*(1+this.correction);
+        for (let i=0;i<out[0].length;i++) {
+          const j=Math.floor(this.readAt), d=this.readAt-j;
+          if (this.running && j+1<this.writeAt) {
+            this.gain=Math.min(1,this.gain+.003);
+            for (let c=0;c<2;c++) {
+              const x=this.ring[(j&this.mask)*2+c],y=this.ring[((j+1)&this.mask)*2+c];
+              out[c][i]=Math.max(-1,Math.min(1,(x+(y-x)*d)*this.gain));
+            }
+            this.readAt+=step;
+          } else {
+            if (this.running && !this.done) this.underruns++;
+            if (this.done && this.running) this.port.postMessage({type:'ended'});
+            this.running=false; this.gain=0;
+          }
+        }
+        if (++this.pulse%75===0) this.port.postMessage({type:'stats',ms:(this.writeAt-this.readAt)/48,underruns:this.underruns,discarded:this.discarded});
+        return true;
+      }
+    }
+    registerProcessor('am-player',AMPlayer);
+  `;
+
+  globalThis.AMReceiverHQ={FrameParser,MonoDecoder,crc16,pcm16,AUDIO_RATE,BAUD,FRAME_BYTES,FRAME_SAMPLES,INVALID};
+  if(typeof document==='undefined') return;
+  const $=id=>document.getElementById(id);
+  const fmt=new Intl.NumberFormat('fr-CA',{maximumFractionDigits:2}).format;
+  const mhz=new Intl.NumberFormat('fr-CA',{minimumFractionDigits:3,maximumFractionDigits:6}).format;
+  const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  const countTransport=()=>({frames:0,crc:0,missing:0,gaps:0,maxGap:0,invalid:0,acqGaps:0,maxAcqGap:0,late:0,discarded:0,serialErrors:0});
+  let port=null,reader=null,serialTask=null,serialParser=null,ctx=null,node=null,gainNode=null,decoder=null;
+  let state='idle', confirmed=false, identity='', token=0, expected=0, acqEnd=-1, acqSpan=0, pendingStart=null;
+  let writeTail=Promise.resolve();
+  let counters=countTransport(), audioStats={}, levels={}, chunks=[], chunkLength=0;
+  globalThis.AMReceiverHQ.uiStats=()=>({state,baud:port?BAUD:0,rate:decoder?AUDIO_RATE:0,transport:{...counters},audio:{...audioStats},levels:{...levels}});
+  Object.freeze(globalThis.AMReceiverHQ);
+
+  function message(text,error=false) { $('status').textContent=text; $('status').classList.toggle('error',error); }
+  function buttons() {
+    $('connect').disabled=!!port||state!=='idle';
+    $('start').disabled=!port||state!=='idle'||!confirmed;
+    $('stop').disabled=!['starting','radio'].includes(state);
+    $('close').disabled=!port||['file','connecting','closing'].includes(state);
+    $('playFile').disabled=state!=='idle'||!$('file').files.length;
+    $('stopFile').disabled=state!=='file';
+    $('frequency').disabled=$('file').disabled=$('fileErasures').disabled=state!=='idle';
+    $('gainMode').disabled=state!=='idle';
+    $('rfGain').disabled=$('vgaGain').disabled=state!=='idle'||$('gainMode').value!=='MANUAL';
+  }
+  function volume() {
+    const percent=Number($('volume').value);
+    $('volumeLabel').textContent=fmt(percent)+' %';
+    if(gainNode) gainNode.gain.setTargetAtTime(percent/100,ctx.currentTime,.012);
+  }
+  async function readyAudio(live) {
+    if(!ctx) ctx=new AudioContext({latencyHint:'interactive'});
+    await ctx.resume();
+    if(!node) {
+      if(!ctx.audioWorklet) throw new Error('AudioWorklet est indisponible. Utilise Chrome ou Edge.');
+      await ctx.audioWorklet.addModule('data:text/javascript;charset=utf-8,'+encodeURIComponent(workletSource));
+      node=new AudioWorkletNode(ctx,'am-player',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2]});
+      node.port.onmessage=({data})=>{
+        if(data.type==='stats') audioStats=data;
+        if(data.type==='ended'&&state==='file') stopFile('Lecture terminée.');
+      };
+      gainNode=ctx.createGain(); gainNode.gain.value=Number($('volume').value)/100;
+      node.connect(gainNode).connect(ctx.destination);
+    }
+    audioStats={}; chunks=[]; chunkLength=0;
+    node.port.postMessage({type:'reset',live});
+  }
+  function silence() {
+    chunks=[]; chunkLength=0;
+    if(node) node.port.postMessage({type:'reset',live:true});
+  }
+  function flush() {
+    if(!chunkLength) return;
+    const audio=new Float32Array(chunkLength);
+    let at=0;
+    for(const chunk of chunks) { audio.set(chunk,at); at+=chunk.length; }
+    chunks=[]; chunkLength=0;
+    node.port.postMessage({type:'pcm',values:audio},[audio.buffer]);
+  }
+  function play(audio) {
+    if(!audio.length) return;
+    chunks.push(audio); chunkLength+=audio.length;
+    if(chunkLength>=960) flush();
+  }
+  function configure() {
+    acqEnd=-1; acqSpan=0;
+    decoder=new MonoDecoder({onGap:(index,count)=>{
+      if(index!==acqEnd) { counters.acqGaps++; acqSpan=0; }
+      acqEnd=index+count; acqSpan+=count; counters.invalid+=count;
+      counters.maxAcqGap=Math.max(counters.maxAcqGap,acqSpan);
+    }});
+    $('rate').textContent='PCM16 mono · 48 kHz';
+  }
+  function frame(index,payload) {
+    if(state!=='radio') return;
+    const gap=(index-expected)>>>0;
+    if(gap>=0x80000000) { counters.late++; return; }
+    if(gap) {
+      counters.missing+=gap; counters.gaps++; counters.maxGap=Math.max(gap,counters.maxGap);
+      if(gap>AUDIO_RATE*.25) { counters.discarded+=gap; silence(); configure(); }
+      else decoder.gap(gap);
+    }
+    expected=(index+FRAME_SAMPLES)>>>0;
+    counters.frames++;
+    play(decoder.process(payload,true));
+  }
+  function line(text) {
+    const response=text.match(/^OK STATUS\s+(\S+)\b/);
+    if(response) identity=response[1];
+    if(/^OK STATUS AMReceiverHQ\s+\d+\s+160\s+1500000\s+32767$/.test(text)) confirmed=true;
+    if(state==='starting'&&pendingStart&&text==='OK GAIN '+pendingStart.gain) {
+      const start=pendingStart; pendingStart=null;
+      $('gainUsed').textContent=start.gain==='AUTO'?'Automatique':start.gain.replace(' ',' / ');
+      void command('START '+start.khz+' HQ\n',()=>state==='starting'&&start.id===token).catch(error=>{
+        if(state==='starting'&&start.id===token) void stopRadio(error.message,true);
+      });
+    }
+    const ok=text.match(/^OK START\s+(\d+)\s+48000\s+HQ$/i);
+    if(ok&&state==='starting') {
+      configure(); expected=0;
+      $('actual').textContent=mhz(Number(ok[1])/1e6)+' MHz';
+      state='radio'; buttons(); message('Réception AM active.');
+    } else if(/^OK START\b/.test(text)&&state==='starting') {
+      void stopRadio('Format reçu incompatible avec le PCM16 AM à 48 kHz.',true);
+    }
+    if(/^END(?:\s|$)/.test(text)&&['radio','stopping'].includes(state)) {
+      state='idle'; silence(); buttons(); message('Réception arrêtée.');
+    }
+    if(/^ERR(?:\s|$)/.test(text)&&state==='starting') {
+      pendingStart=null; state='idle'; silence(); buttons(); message(text,true);
+    }
+    $('deviceMessage').textContent=text;
+  }
+  function command(text,stillNeeded=()=>true) {
+    const own=port;
+    const job=writeTail.catch(()=>{}).then(async()=>{
+      if(!stillNeeded()) return;
+      if(port!==own||!own?.writable) throw new Error('Port série indisponible.');
+      const writer=own.writable.getWriter();
+      try { await writer.write(new TextEncoder().encode(text)); } finally { writer.releaseLock(); }
+    });
+    writeTail=job;
+    return job;
+  }
+  async function readSerial(own) {
+    try {
+      let ended=false;
+      while(port===own&&own.readable&&!ended) {
+        const local=own.readable.getReader(); reader=local;
+        try {
+          while(port===own) {
+            const {value,done}=await local.read();
+            if(done) { ended=true; break; }
+            if(value?.length) serialParser.feed(value);
+          }
+        } catch(error) {
+          if(port===own) { counters.serialErrors++; if(!own.readable) throw error; }
+        } finally { local.releaseLock(); if(reader===local) reader=null; }
+      }
+    } catch(error) { if(port===own) message('Port série interrompu · '+error.message,true); }
+    finally {
+      if(port===own) {
+        port=null; confirmed=false; pendingStart=null;
+        if(state!=='connecting') { state='idle'; silence(); buttons(); }
+        try { await own.close(); } catch(_) {}
+      }
+    }
+  }
+  async function disconnectSerial() {
+    const old=port, task=serialTask;
+    port=null; confirmed=false; serialTask=null; pendingStart=null;
+    if(reader) { try { await reader.cancel(); } catch(_) {} }
+    if(task) await task;
+    if(old) await old.close();
+  }
+  async function connect() {
+    if(!navigator.serial) { message('Web Serial est indisponible. Utilise Chrome ou Edge.',true); return; }
+    state='connecting'; confirmed=false; identity=''; buttons();
+    try {
+      const own=await navigator.serial.requestPort();
+      await own.open({baudRate:BAUD,dataBits:8,stopBits:2,parity:'none',flowControl:'none',bufferSize:65536});
+      port=own;
+      serialParser=new FrameParser({onFrame:frame,onLine:line,onError:()=>{if(state==='radio') counters.crc++;}});
+      serialTask=readSerial(own);
+      message('Vérification de la carte AM…');
+      await wait(650);
+      for(let n=0;n<2&&port===own&&!confirmed&&!identity;n++) { await command('STATUS\n'); await wait(250); }
+      if(port===own&&!confirmed&&!identity) {
+        message('Réinitialisation de la carte AM…');
+        try {
+          await own.setSignals({dataTerminalReady:false,requestToSend:true}); await wait(120);
+          if(port===own) await own.setSignals({dataTerminalReady:false,requestToSend:false});
+          await wait(850);
+          if(port===own) { await command('STATUS\n'); await wait(300); }
+        } catch(_) {}
+      }
+      if(confirmed&&port===own) message('AM Receiver HQ prêt · 1,5 Mbaud, 8N2.');
+      else {
+        await disconnectSerial();
+        message(identity==='AMReceiverHQ'?'Vérifie la configuration de la carte AM à 160 MHz.':identity?'Ce port répond avec '+identity+'. Choisis le port de la carte AM.':'Aucune réponse AMReceiverHQ. Vérifie le port et le firmware RX.',true);
+      }
+    } catch(error) {
+      if(port) { try { await disconnectSerial(); } catch(_) {} }
+      message(error.name==='NotFoundError'?'Aucun port sélectionné.':'Connexion impossible · '+error.message,error.name!=='NotFoundError');
+    } finally { if(state==='connecting') state='idle'; buttons(); }
+  }
+  async function closePort() {
+    const active=port&&['starting','radio'].includes(state);
+    token++; pendingStart=null;
+    state='closing'; silence(); buttons();
+    if(active) { try { await command('!\n'); } catch(_) {} }
+    try { await disconnectSerial(); message('Port fermé.'); }
+    catch(error) { message('Fermeture incomplète · '+error.message,true); }
+    finally { state='idle'; buttons(); }
+  }
+  async function startRadio() {
+    const frequency=Number($('frequency').value.trim().replace(',','.'));
+    if(!Number.isFinite(frequency)||frequency<2400||frequency>2483.5) { message('Entre une fréquence entre 2400 et 2483,5 MHz.',true); return; }
+    const id=++token;
+    state='starting'; counters=countTransport(); levels={}; buttons(); message('Accord du récepteur AM…');
+    try {
+      await readyAudio(true);
+      if(state!=='starting'||id!==token) return;
+      const gain=$('gainMode').value==='AUTO'?'AUTO':$('rfGain').value+' '+$('vgaGain').value;
+      pendingStart={id,khz:Math.round(frequency*1000),gain};
+      await command('GAIN '+gain+'\n',()=>state==='starting'&&id===token);
+      setTimeout(()=>{if(state==='starting'&&id===token) void stopRadio('Aucune réponse de la carte AM au réglage du gain ou à START.',true);},2600);
+    } catch(error) { pendingStart=null; state='idle'; buttons(); message(error.message,true); }
+  }
+  async function stopRadio(reason='',error=false) {
+    const id=++token; pendingStart=null;
+    state='stopping'; buttons(); silence();
+    try { await command('!\n'); } catch(e) { reason=reason||e.message; error=true; }
+    setTimeout(()=>{if(state==='stopping'&&token===id) { state='idle'; buttons(); if(!reason) message('Réception arrêtée.'); }},300);
+    if(reason) message(reason,error);
+  }
+  function stopFile(text) { token++; state='idle'; silence(); buttons(); message(text); }
+  async function startFile() {
+    const file=$('file').files[0];
+    if(!file) return;
+    if(/\.(?:mpx8|wav|mp3)$/i.test(file.name)||file.size<8||file.size%2||file.size>60*1024*1024) {
+      message('Choisis un fichier PCM16 brut de taille paire, entre 8 octets et 60 Mo.',true); return;
+    }
+    const id=++token, erasures=$('fileErasures').checked;
+    state='file'; counters=countTransport(); levels={}; buttons();
+    try {
+      await readyAudio(false);
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      if(state!=='file'||id!==token) return;
+      const samples=pcm16(bytes);
+      configure(); $('actual').textContent='Fichier'; $('gainUsed').textContent='—'; message('Lecture · '+file.name);
+      let read=0;
+      const started=ctx.currentTime;
+      function push() {
+        if(state!=='file'||id!==token) return;
+        const target=Math.min(samples.length,Math.ceil((ctx.currentTime-started+.105)*AUDIO_RATE));
+        while(read<target) {
+          const next=Math.min(target,read+960);
+          play(decoder.process(samples.subarray(read,next),erasures)); read=next;
+        }
+        flush();
+        if(read<samples.length) setTimeout(push,12);
+        else node.port.postMessage({type:'end'});
+      }
+      push();
+    } catch(error) { stopFile('Lecture impossible · '+error.message); }
+  }
+  $('volume').oninput=volume; $('file').onchange=buttons; $('gainMode').onchange=buttons;
+  $('connect').onclick=connect; $('start').onclick=startRadio; $('stop').onclick=()=>stopRadio(); $('close').onclick=closePort;
+  $('playFile').onclick=startFile; $('stopFile').onclick=()=>stopFile('Lecture arrêtée.');
+  const db=x=>x>0?fmt(20*Math.log10(x))+' dBFS':'—';
+  setInterval(()=>{
+    if(state==='radio') flush();
+    if(decoder&&(state==='radio'||state==='file')) levels=decoder.stats(true);
+    $('rms').textContent=db(levels.rms); $('peak').textContent=db(levels.peak);
+    for(const key of ['frames','crc','missing','invalid','late','serialErrors']) $(key).textContent=fmt(counters[key]);
+    $('gaps').textContent=fmt(counters.gaps)+' · '+fmt(1000*counters.maxGap/AUDIO_RATE)+' ms';
+    $('acqGaps').textContent=fmt(counters.acqGaps)+' · '+fmt(1000*counters.maxAcqGap/AUDIO_RATE)+' ms';
+    $('buffer').textContent=audioStats.ms===undefined?'—':fmt(Math.max(0,audioStats.ms))+' ms';
+    $('underruns').textContent=fmt(audioStats.underruns||0);
+    $('discarded').textContent=fmt(counters.discarded+(audioStats.discarded||0));
+  },150);
+  buttons();
+})();
+</script>
+</html>
