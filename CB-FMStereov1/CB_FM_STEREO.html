@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C.B. FM stéréo</title>
+<style>
+  :root { color-scheme: dark; --bg: #111821; --card: #1a2633; --line: #344557; --text: #f1f6fc; --muted: #b5c3d3; --accent: #83e2bb; --warn: #ffb5a1; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 1rem/1.5 system-ui, sans-serif; }
+  main { width: min(100% - 2rem, 58rem); margin: clamp(1rem, 5vw, 3rem) auto; }
+  header, .bar, .dial { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .65rem 1rem; }
+  h1, h2, p { margin: 0; }
+  h1 { font-size: clamp(1.7rem, 5vw, 2.6rem); line-height: 1.1; }
+  h2 { font-size: 1.1rem; margin-bottom: .75rem; }
+  .sub, .help { color: var(--muted); font-size: .9rem; }
+  .card { padding: 1rem 1.2rem; border: 1px solid var(--line); border-radius: .85rem; background: var(--card); min-width: 0; }
+  .station { margin-top: 1rem; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; }
+  label { display: block; margin-top: .65rem; }
+  label span { display: block; font-size: .92rem; font-weight: 600; margin-bottom: .25rem; }
+  select, input:not([type="range"]), button { font: inherit; color: inherit; border: 1px solid #627386; border-radius: .45rem; padding: .45rem .65rem; background: #14202b; }
+  select, input:not([type="range"]) { width: 100%; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); margin: .65rem 0; }
+  button { cursor: pointer; }
+  button:disabled, select:disabled, input:disabled { opacity: .52; cursor: default; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid #a1d3ff; outline-offset: 3px; }
+  .button-primary { background: var(--accent); color: #102a22; border-color: var(--accent); font-weight: 700; }
+  #ptt { display: block; width: 100%; min-height: 5rem; font-size: 1.35rem; font-weight: 750; touch-action: none; user-select: none; margin: .7rem 0; background: #223f53; }
+  #ptt[data-held="true"] { background: #9f362a; border-color: var(--warn); color: white; }
+  #state { border-radius: 2rem; background: #2b3e50; padding: .28rem .75rem; font-weight: 650; }
+  #state[data-state="rx"] { background: #124333; color: #a2f5ce; }
+  #state[data-state="tx"] { background: #7d3027; color: #ffd8ce; }
+  #status[data-error="true"] { color: var(--warn); }
+  #signal { width: 100%; height: .85rem; accent-color: var(--accent); }
+  .radio-readout { font-variant-numeric: tabular-nums; }
+  .fine { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; }
+  .pad { margin-top: .75rem; }
+  @media (max-width: 42rem) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>C.B. FM stéréo</h1><p class="sub">Deux postes ESP8266 · alternat · 2,4 GHz</p></div>
+    <button type="button" class="button-primary" id="serial">Connecter le port série</button>
+  </header>
+  <section class="card station">
+    <div class="bar"><h2>Poste</h2><span id="state" data-state="off">Déconnecté</span></div>
+    <p id="status" class="help" aria-live="polite">Choisis le port de cet ESP8266. La réception démarre après connexion.</p>
+    <button type="button" id="ptt" aria-label="Appuyer et maintenir pour parler" data-held="false" disabled>APPUYER POUR PARLER</button>
+    <p class="help">Maintiens le bouton ou la barre d’espace. Relâche pour revenir à l’écoute.</p>
+    <div class="dial pad"><label for="squelch"><span>Squelch</span></label><output id="squelchValue" for="squelch">12 dB au-dessus du bruit</output></div>
+    <input id="squelch" type="range" min="0" max="42" value="12" aria-label="Seuil du squelch">
+    <meter id="signal" min="0" max="60" value="0" aria-label="Niveau reçu au-dessus du bruit"></meter>
+    <p class="help radio-readout" id="rxStatus">Signal — · Squelch fermé</p>
+    <div class="dial pad"><label for="rxVolume"><span>Volume de réception</span></label><output id="rxVolumeValue" for="rxVolume">100 %</output></div>
+    <input id="rxVolume" type="range" min="0" max="100" value="100">
+  </section>
+  <div class="grid">
+    <section class="card">
+      <h2>Fréquence et réception</h2>
+      <label><span>Préréglage</span><select id="preset">
+        <option value="2412.3125">Canal 1 · 2 412,3125 MHz</option>
+        <option value="2442.3125" selected>Canal 7 · 2 442,3125 MHz</option>
+        <option value="2462.3125">Canal 11 · 2 462,3125 MHz</option>
+        <option value="manual">Fréquence manuelle</option>
+      </select></label>
+      <div class="fine">
+        <label><span>Fréquence (MHz)</span><input id="frequency" inputmode="decimal" value="2442,3125" autocomplete="off"></label>
+        <label><span>Correction RX (Hz)</span><input id="fine" type="number" min="-50000" max="50000" step="1" value="0"></label>
+      </div>
+      <label><span>Profil de réception</span><select id="profile">
+        <option value="HQ">HQ · stéréo 120 kéch/s</option>
+        <option value="ROBUST">ROBUST · stéréo 96 kéch/s</option>
+        <option value="MONO">MONO · 48 kéch/s</option>
+      </select></label>
+      <button type="button" id="tune" class="pad" disabled>Accorder</button>
+      <p class="help pad radio-readout" id="actual">Accord RX —</p>
+    </section>
+    <section class="card">
+      <h2>Audio</h2>
+      <label><span>Microphone</span><select id="mic"><option value="">Microphone par défaut</option></select></label>
+      <div class="dial"><label for="micGain"><span>Gain du micro</span></label><output id="micGainValue" for="micGain">0 dB</output></div>
+      <input id="micGain" type="range" min="-24" max="18" value="0" aria-valuetext="0 dB">
+      <label><span>Haut-parleur</span><select id="speaker"><option value="">Sortie par défaut</option></select></label>
+      <button type="button" id="enableMic" class="pad">Préparer le microphone</button>
+      <p class="help pad" id="audioStatus">L’émission utilise les deux canaux du micro. Une source mono est centrée.</p>
+    </section>
+  </div>
+</main>
+<script>
+  'use strict';
+
+  const AUDIO_WORKLET_SOURCE = "// AudioWorklet partagé par l\u0027émetteur FMStereoHQ et le décodeur FMStereoRX.\nconst AUDIO_RATE = 48000;\nconst MPX_RATE = 120000;\nconst MPX_CHUNK = 600;\nconst PILOT_LEVEL = .09;\nconst PROFILES = {\n  HQ: { rate: 120000, cutoff: 15150, taps: 121 },\n  ROBUST: { rate: 96000, cutoff: 8300, taps: 101 },\n  MONO: { rate: 48000, cutoff: 15000, taps: 63 },\n};\n\nfunction clamp(value, minimum, maximum) {\n  return Math.max(minimum, Math.min(maximum, value));\n}\n\nfunction lowpass(length, cutoff, rate, fraction) {\n  const taps = new Float64Array(length);\n  const middle = (length - 1) / 2;\n  let gain = 0;\n  for (let i = 0; i \u003c length; i++) {\n    const x = i - middle - fraction;\n    const sinc = x === 0 ? 2 * cutoff / rate : Math.sin(2 * Math.PI * cutoff * x / rate) / (Math.PI * x);\n    const angle = 2 * Math.PI * i / (length - 1);\n    taps[i] = sinc * (.42 - .5 * Math.cos(angle) + .08 * Math.cos(2 * angle));\n    gain += taps[i];\n  }\n  for (let i = 0; i \u003c length; i++) taps[i] /= gain;\n  return taps;\n}\n\nclass StereoEncoder {\n  constructor(inputRate, send) {\n    this.rate = inputRate;\n    this.send = send;\n    this.radius = 32;\n    this.ringSize = 128;\n    this.left = new Float32Array(this.ringSize);\n    this.right = new Float32Array(this.ringSize);\n    this.dcAlpha = 1 - Math.exp(-2 * Math.PI * 30 / inputRate);\n    this.release = 1 - Math.exp(-1 / (.03 * MPX_RATE));\n    this.pilot = new Float32Array(120);\n    this.subcarrier = new Float32Array(120);\n    for (let i = 0; i \u003c this.pilot.length; i++) {\n      const phase = 2 * Math.PI * 19 * i / this.pilot.length;\n      this.pilot[i] = PILOT_LEVEL * Math.sin(phase);\n      this.subcarrier[i] = Math.sin(2 * phase);\n    }\n    // A short lookbehind makes the band-limited interpolator causal. Each\n    // phase uses the same fractional Blackman window as the file encoder.\n    const length = 2 * this.radius + 1;\n    const cutoff = Math.min(14200, inputRate * .44) / inputRate;\n    this.phaseCount = 64;\n    this.bank = Array.from({ length: this.phaseCount }, (_, phase) =\u003e {\n      const weights = new Float64Array(length);\n      const fraction = phase / this.phaseCount;\n      let gain = 0;\n      for (let i = 0; i \u003c length; i++) {\n        const d = this.radius + fraction - i;\n        if (Math.abs(d) \u003e= this.radius) continue;\n        const angle = Math.PI * d / this.radius;\n        const window = .42 + .5 * Math.cos(angle) + .08 * Math.cos(2 * angle);\n        const sinc = d === 0 ? 2 * cutoff : Math.sin(2 * Math.PI * cutoff * d) / (Math.PI * d);\n        weights[i] = sinc * window;\n        gain += weights[i];\n      }\n      for (let i = 0; i \u003c length; i++) weights[i] /= gain;\n      return weights;\n    });\n    this.reset();\n  }\n\n  reset() {\n    this.left.fill(0);\n    this.right.fill(0);\n    this.dcLeft = this.dcRight = 0;\n    this.inputIndex = 0;\n    this.sourceIndex = 0;\n    this.sourcePhase = 0;\n    this.pilotIndex = 0;\n    this.gain = .8 * (1 - PILOT_LEVEL);\n    this.chunk = new Uint8Array(MPX_CHUNK);\n    this.chunkPosition = 0;\n  }\n\n  process(input, frames) {\n    const left = input?.[0];\n    const right = input?.[1] ?? left;\n    const mask = this.ringSize - 1;\n    const nominalGain = .8 * (1 - PILOT_LEVEL);\n    for (let i = 0; i \u003c frames; i++) {\n      const position = this.inputIndex++;\n      const l = left?.[i] ?? 0;\n      const r = right?.[i] ?? 0;\n      this.dcLeft += this.dcAlpha * (l - this.dcLeft);\n      this.dcRight += this.dcAlpha * (r - this.dcRight);\n      this.left[position \u0026 mask] = l - this.dcLeft;\n      this.right[position \u0026 mask] = r - this.dcRight;\n      while (this.sourceIndex \u003c= position) {\n        const phase = Math.floor(this.sourcePhase * this.phaseCount / MPX_RATE);\n        const weights = this.bank[phase];\n        const start = this.sourceIndex - 2 * this.radius;\n        let a = 0;\n        let b = 0;\n        for (let j = 0; j \u003c weights.length; j++) {\n          const index = (start + j) \u0026 mask;\n          a += this.left[index] * weights[j];\n          b += this.right[index] * weights[j];\n        }\n        // Retain the existing ±50 kHz chain\u0027s difference precompensation.\n        const programme = .5 * (a + b + 1.145 * (a - b) * this.subcarrier[this.pilotIndex]);\n        const limit = (1 - PILOT_LEVEL) / Math.max(1, Math.abs(programme) * 1.25);\n        this.gain = Math.min(limit, this.gain + this.release * (nominalGain - this.gain));\n        const mpx = programme * this.gain + this.pilot[this.pilotIndex];\n        this.chunk[this.chunkPosition++] = clamp(Math.round(mpx * 127), -127, 127);\n        if (++this.pilotIndex === this.pilot.length) this.pilotIndex = 0;\n        if (this.chunkPosition === this.chunk.length) {\n          this.send(this.chunk);\n          this.chunk = new Uint8Array(MPX_CHUNK);\n          this.chunkPosition = 0;\n        }\n        this.sourcePhase += this.rate;\n        this.sourceIndex += Math.floor(this.sourcePhase / MPX_RATE);\n        this.sourcePhase %= MPX_RATE;\n      }\n    }\n  }\n}\n\nclass StereoDecoder {\n  constructor(mode) {\n    const profile = PROFILES[mode];\n    this.stereo = mode !== \u0027MONO\u0027;\n    this.rate = profile.rate;\n    this.length = profile.taps;\n    this.taps = [lowpass(this.length, profile.cutoff, this.rate, 0),\n      lowpass(this.length, profile.cutoff, this.rate, .5)];\n    this.sum = new Float64Array(this.length * 2);\n    this.diff = new Float64Array(this.length * 2);\n    this.position = this.resamplePhase = 0;\n    this.sin = 0;\n    this.cos = 1;\n    this.offset = 0;\n    this.setOscillator();\n    this.pilotAlpha = 1 - Math.exp(-2 * Math.PI * 250 / this.rate);\n    this.dcAlpha = 1 - Math.exp(-2 * Math.PI * 20 / this.rate);\n    this.pi = this.pq = this.pi2 = this.pq2 = this.dc = 0;\n    this.pilotAmp = this.good = this.bad = this.tick = 0;\n    this.locked = false;\n    this.blend = this.outLeft = this.outRight = 0;\n    this.lastLeft = this.lastRight = this.pending = 0;\n    this.gapLength = this.fadeIn = 0;\n    this.longGap = false;\n  }\n\n  setOscillator() {\n    const w = 2 * Math.PI * (19000 + this.offset) / this.rate;\n    this.stepSin = Math.sin(w);\n    this.stepCos = Math.cos(w);\n  }\n\n  rotate(s, c) {\n    const nextSin = this.sin * c + this.cos * s;\n    this.cos = this.cos * c - this.sin * s;\n    this.sin = nextSin;\n  }\n\n  track(x) {\n    const k = this.pilotAlpha;\n    this.pi += k * (x * this.sin - this.pi);\n    this.pq += k * (x * this.cos - this.pq);\n    this.pi2 += k * (this.pi - this.pi2);\n    this.pq2 += k * (this.pq - this.pq2);\n    if (++this.tick \u003c this.rate / 1000) return;\n    this.tick = 0;\n    this.pilotAmp = 2 * Math.hypot(this.pi2, this.pq2);\n    const error = Math.atan2(this.pq2, this.pi2);\n    if (this.pilotAmp \u003e .025) {\n      this.offset = clamp(this.offset + .55 * error, -150, 150);\n      this.setOscillator();\n      const c = Math.cos(.12 * error);\n      const s = Math.sin(.12 * error);\n      this.rotate(s, c);\n      const a = this.pi * c + this.pq * s;\n      const b = this.pi2 * c + this.pq2 * s;\n      this.pq = this.pq * c - this.pi * s;\n      this.pq2 = this.pq2 * c - this.pi2 * s;\n      this.pi = a;\n      this.pi2 = b;\n    }\n    if (this.pilotAmp \u003e .025 \u0026\u0026 Math.abs(error) \u003c .48) {\n      this.bad = 0;\n      if (++this.good \u003e= 50) this.locked = true;\n    } else {\n      this.good = 0;\n      if (++this.bad \u003e= 30) this.locked = false;\n    }\n    const norm = Math.hypot(this.sin, this.cos);\n    this.sin /= norm;\n    this.cos /= norm;\n  }\n\n  input(value, valid) {\n    let x = value;\n    if (valid) {\n      this.dc += this.dcAlpha * (x - this.dc);\n      x -= this.dc;\n      if (this.stereo) this.track(x);\n    }\n    const difference = this.stereo ? 4 * x * this.sin * this.cos : 0;\n    if (this.stereo) this.rotate(this.stepSin, this.stepCos);\n    const end = this.position + this.length;\n    this.sum[this.position] = this.sum[end] = x;\n    this.diff[this.position] = this.diff[end] = difference;\n    if (++this.position === this.length) this.position = 0;\n    this.resamplePhase += AUDIO_RATE;\n    if (this.resamplePhase \u003c this.rate) return false;\n    this.resamplePhase -= this.rate;\n    if (!valid) return true;\n    const taps = this.taps[this.resamplePhase === 0 ? 0 : 1];\n    let m = 0;\n    let d = 0;\n    for (let i = 0; i \u003c this.length; i++) {\n      m += taps[i] * this.sum[end - i];\n      d += taps[i] * this.diff[end - i];\n    }\n    this.blend += ((this.locked ? 1 : 0) - this.blend) * .0011;\n    d *= this.blend;\n    this.outLeft = m + d;\n    this.outRight = m - d;\n    return true;\n  }\n\n  gap(samples) {\n    if (!this.pending) {\n      this.lastLeft = this.outLeft;\n      this.lastRight = this.outRight;\n    }\n    this.gapLength += samples;\n    if (this.gapLength \u003c= this.rate * .006 \u0026\u0026 !this.longGap) {\n      for (let i = 0; i \u003c samples; i++) {\n        if (this.input(this.locked ? this.pilotAmp * this.sin : 0, false)) this.pending++;\n      }\n      return;\n    }\n    const position = this.resamplePhase + samples * AUDIO_RATE;\n    this.pending += Math.floor(position / this.rate);\n    this.resamplePhase = position % this.rate;\n    const w = 2 * Math.PI * (19000 + this.offset) * samples / this.rate;\n    if (this.stereo) this.rotate(Math.sin(w), Math.cos(w));\n    this.sum.fill(0);\n    this.diff.fill(0);\n    this.outLeft = this.outRight = 0;\n    this.longGap = true;\n    if (this.gapLength \u003e= this.rate * .05) {\n      this.locked = false;\n      this.good = this.bad = this.tick = 0;\n      this.pi = this.pq = this.pi2 = this.pq2 = 0;\n    }\n  }\n\n  conceal(push, targetL, targetR) {\n    for (let i = 0; i \u003c this.pending; i++) {\n      if (this.longGap) {\n        const down = Math.max(0, 1 - (i + 1) / 144);\n        const up = Math.max(0, 1 - (this.pending - i) / 144);\n        push(this.lastLeft * down + targetL * up, this.lastRight * down + targetR * up);\n      } else {\n        const fraction = (i + 1) / (this.pending + 1);\n        push(this.lastLeft + (targetL - this.lastLeft) * fraction,\n          this.lastRight + (targetR - this.lastRight) * fraction);\n      }\n    }\n    this.pending = this.gapLength = 0;\n    this.longGap = false;\n  }\n\n  process(samples, push) {\n    for (let i = 0; i \u003c samples.length; i++) {\n      const byte = samples[i];\n      if (byte === 0x80) {\n        let end = i + 1;\n        while (end \u003c samples.length \u0026\u0026 samples[end] === 0x80) end++;\n        this.gap(end - i);\n        i = end - 1;\n        if (this.pending \u003e= 960) {\n          this.conceal(push, 0, 0);\n          this.fadeIn = 144;\n        }\n        continue;\n      }\n      if (!this.input((byte \u003c 128 ? byte : byte - 256) / 128, true)) continue;\n      if (this.pending) {\n        this.conceal(push, this.outLeft, this.outRight);\n        this.fadeIn = 0;\n      }\n      const gain = this.fadeIn ? 1 - (--this.fadeIn) / 144 : 1;\n      push(this.outLeft * gain, this.outRight * gain);\n    }\n  }\n}\n\nclass CBRadio extends AudioWorkletProcessor {\n  constructor() {\n    super();\n    this.capacity = 16384;\n    this.mask = this.capacity - 1;\n    this.ring = new Float32Array(this.capacity * 2);\n    this.mode = \u0027idle\u0027;\n    this.epoch = 0;\n    this.encoder = new StereoEncoder(sampleRate, samples =\u003e {\n      this.port.postMessage({ type: \u0027tx\u0027, epoch: this.epoch, samples }, [samples.buffer]);\n    });\n    this.pushPCM = (left, right) =\u003e {\n      if (this.writeAt - Math.floor(this.readAt) \u003e= this.capacity) {\n        this.readAt = this.writeAt - 1728;\n        this.gain = 0;\n      }\n      const i = (this.writeAt++ \u0026 this.mask) * 2;\n      this.ring[i] = left;\n      this.ring[i + 1] = right;\n    };\n    this.port.onmessage = ({ data }) =\u003e {\n      if (data.type === \u0027mode\u0027) {\n        this.mode = data.mode;\n        this.epoch = data.epoch;\n        this.decoder = this.mode === \u0027rx\u0027 ? new StereoDecoder(data.profile) : null;\n        if (this.mode === \u0027tx\u0027) this.encoder.reset();\n        this.readAt = this.writeAt = 0;\n        this.running = this.open = false;\n        this.gain = this.correction = this.underruns = this.statusFrames = 0;\n      } else if (data.type === \u0027squelch\u0027) {\n        this.open = data.open;\n      } else if (data.type === \u0027rx\u0027 \u0026\u0026 this.decoder \u0026\u0026 data.epoch === this.epoch) {\n        this.decoder.process(data.samples, this.pushPCM);\n      }\n    };\n  }\n\n  process(inputs, outputs) {\n    const out = outputs[0];\n    const frames = out[0].length;\n    if (this.mode === \u0027tx\u0027) this.encoder.process(inputs[0], frames);\n    if (this.mode !== \u0027rx\u0027) return true;\n\n    const queued = this.writeAt - this.readAt;\n    if (queued \u003e 7200) {\n      this.readAt = this.writeAt - 1728;\n      this.gain = 0;\n    }\n    if (!this.running \u0026\u0026 queued \u003e= 1152) this.running = true;\n    const correction = clamp((this.writeAt - this.readAt - 1728) * .000003, -.009, .009);\n    this.correction += (correction - this.correction) * .04;\n    const step = AUDIO_RATE / sampleRate * (1 + this.correction);\n    const ramp = 1 / (.005 * sampleRate);\n    for (let i = 0; i \u003c frames; i++) {\n      const j = Math.floor(this.readAt);\n      if (!this.running || j + 1 \u003e= this.writeAt) {\n        if (this.running) this.underruns++;\n        this.running = false;\n        this.gain = 0;\n        break;\n      }\n      const fraction = this.readAt - j;\n      const a = (j \u0026 this.mask) * 2;\n      const b = ((j + 1) \u0026 this.mask) * 2;\n      this.gain = clamp(this.gain + (this.open ? ramp : -ramp), 0, 1);\n      for (let c = 0; c \u003c 2; c++) {\n        const value = this.ring[a + c] + (this.ring[b + c] - this.ring[a + c]) * fraction;\n        out[c][i] = clamp(value * this.gain, -1, 1);\n      }\n      this.readAt += step;\n    }\n    this.statusFrames += frames;\n    if (this.statusFrames \u003e= sampleRate / 5) {\n      this.statusFrames = 0;\n      this.port.postMessage({ type: \u0027rx-status\u0027, epoch: this.epoch,\n        pilotLocked: this.decoder.locked, underruns: this.underruns,\n        buffered: (this.writeAt - this.readAt) * 1000 / AUDIO_RATE });\n    }\n    return true;\n  }\n}\n\nregisterProcessor(\u0027cb-radio\u0027, CBRadio);\n";
+  const $ = id => document.getElementById(id);
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const clamp = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
+  const frequencyFormat = new Intl.NumberFormat('fr-CA', {minimumFractionDigits: 3, maximumFractionDigits: 6});
+  const profiles = {HQ: 120000, ROBUST: 96000, MONO: 48000};
+  const payloadSize = 128;
+  const headerSize = 10;
+  const frameSize = headerSize + payloadSize;
+  const pttByte = 0xa5;
+  const readyByte = 0xef;
+  const txChunkBytes = 600;
+  const txWriteBytes = 4 * txChunkBytes;
+  const txPrerollBytes = 9600; // 80 ms de MPX pour absorber la latence USB au départ.
+  const txQueueLimit = 28800; // 240 ms maximum en attente dans le navigateur.
+  const startBytes = [
+    Uint8Array.of(77, 80, 88, 51), // MPX3
+    Uint8Array.of(79, 75, 32),     // OK
+    Uint8Array.of(69, 82, 82, 32), // ERR
+    Uint8Array.of(readyByte, readyByte, readyByte, readyByte),
+  ];
+
+  class SerialParser {
+    constructor(frame, line, ready) {
+      this.rest = new Uint8Array(0);
+      this.frame = frame;
+      this.line = line;
+      this.ready = ready;
+    }
+    feed(chunk) {
+      let bytes = chunk;
+      if (this.rest.length) {
+        bytes = new Uint8Array(this.rest.length + chunk.length);
+        bytes.set(this.rest);
+        bytes.set(chunk, this.rest.length);
+      }
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      let offset = 0;
+      while (offset < bytes.length) {
+        const first = bytes[offset];
+        const prefix = startBytes.find(item => item[0] === first);
+        if (!prefix) { offset++; continue; }
+        const available = Math.min(prefix.length, bytes.length - offset);
+        let matches = true;
+        for (let i = 1; i < available; i++) {
+          if (bytes[offset + i] !== prefix[i]) { matches = false; break; }
+        }
+        if (!matches) { offset++; continue; }
+        if (available < prefix.length) break;
+        if (first === 77) {
+          if (bytes.length - offset < frameSize) break;
+          this.frame(view.getUint32(offset + 4, true), view.getUint16(offset + 8, true),
+            bytes.subarray(offset + headerSize, offset + frameSize));
+          offset += frameSize;
+        } else if (first === readyByte) {
+          this.ready();
+          offset += prefix.length;
+        } else {
+          let end = offset + prefix.length;
+          while (end < bytes.length && bytes[end] >= 32 && bytes[end] <= 126 && end - offset <= 120) end++;
+          if (end === bytes.length) break;
+          if (bytes[end] === 10 || (bytes[end] === 13 && bytes[end + 1] === 10)) {
+            this.line(decoder.decode(bytes.subarray(offset, end)));
+            offset = end + (bytes[end] === 13 ? 2 : 1);
+          } else if (bytes[end] === 13 && end + 1 === bytes.length) {
+            break;
+          } else {
+            offset++;
+          }
+        }
+      }
+      this.rest = bytes.slice(offset);
+    }
+  }
+
+  let state = 'off';
+  let serial = null;
+  let timer = 0;
+  let activeTune = null;
+  let pendingTune = null;
+  let returnMessage = '';
+  let returnError = false;
+  let pttHold = null;
+  let holdingPointer = null;
+  let epoch = 0;
+  let audio = null;
+  let audioPending = null;
+  let mic = null;
+  let micSource = null;
+  let micPending = null;
+  let micChoice = '';
+  let micGeneration = 0;
+  let signalDb = null;
+  let noiseDb = null;
+  let noiseSamples = 0;
+  let lastSignalAt = 0;
+  let squelchOpen = false;
+  let carrierSeenAt = 0;
+  let expectedIndex = 0;
+  let missingFrames = 0;
+  let rxBuffer = new Uint8Array(4096);
+  let rxUsed = 0;
+  let playback = null;
+  let txQueue = [];
+  let queuedTxBytes = 0;
+  let txWriting = false;
+  let txPrimed = false;
+  let returnAfterReady = false;
+
+  const stateLabels = {
+    off: 'Déconnecté', connecting: 'Connexion', probe: 'Vérification', sync: 'Vérification', tuning: 'Accord',
+    rx: 'En écoute', arming: 'Microphone', keying: 'Passage en émission',
+    tx: 'Émission', returning: 'Retour à l’écoute', closing: 'Déconnexion',
+  };
+  function message(text, error = false) {
+    $('status').textContent = text;
+    $('status').dataset.error = String(error);
+  }
+  function micMessage(text) { $('audioStatus').textContent = text; }
+  function refreshControls() {
+    const canTune = state === 'off' || state === 'rx';
+    const pttStates = ['rx', 'arming', 'keying', 'tx'];
+    $('state').textContent = state === 'tx' && !txPrimed ? 'Préparation TX' : stateLabels[state];
+    $('state').dataset.state = state === 'arming' ? 'rx' : state;
+    $('serial').textContent = state === 'off' ? 'Connecter le port série' : 'Déconnecter';
+    $('serial').disabled = state === 'connecting' || state === 'closing';
+    for (const id of ['preset', 'frequency', 'fine', 'profile']) $(id).disabled = !canTune;
+    $('tune').disabled = state !== 'rx';
+    $('ptt').disabled = !pttStates.includes(state);
+    $('ptt').dataset.held = String(Boolean(pttHold));
+    $('ptt').textContent = state === 'tx' && txPrimed ? 'EN ÉMISSION · RELÂCHER POUR ÉCOUTER' : 'APPUYER POUR PARLER';
+    $('mic').disabled = Boolean(pttHold || micPending);
+    $('enableMic').disabled = Boolean(pttHold || micPending);
+  }
+  function setState(next, text, error = false) {
+    state = next;
+    refreshControls();
+    if (text) message(text, error);
+  }
+  function cancelTimer() { clearTimeout(timer); timer = 0; }
+  function expectReply(text, ms = 2600) {
+    cancelTimer();
+    timer = setTimeout(() => fail(text), ms);
+  }
+
+  async function updateDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    for (const [id, kind, name] of [
+      ['mic', 'audioinput', 'Microphone'],
+      ['speaker', 'audiooutput', 'Haut-parleur'],
+    ]) {
+      const select = $(id);
+      const chosen = select.value;
+      const choices = devices.filter(device => device.kind === kind && device.deviceId && device.deviceId !== 'default');
+      const option = (title, value) => new Option(title, value);
+      select.replaceChildren(option(id === 'mic' ? 'Microphone par défaut' : 'Sortie par défaut', ''));
+      choices.forEach((device, index) => select.add(option(device.label || name + ' ' + (index + 1), device.deviceId)));
+      if (choices.some(device => device.deviceId === chosen)) select.value = chosen;
+    }
+  }
+
+  const micGainFactor = () => 10 ** (Number($('micGain').value) / 20);
+  const rxVolumeFactor = () => Number($('rxVolume').value) / 100;
+
+  async function setupAudio() {
+    if (audio) { await audio.context.resume(); return audio; }
+    if (audioPending) return audioPending;
+    if (!window.isSecureContext || !window.AudioContext || !window.AudioWorkletNode) {
+      throw new Error('Ouvre cette page sur localhost dans Chrome ou Edge pour accéder à l’audio.');
+    }
+    if (!AUDIO_WORKLET_SOURCE) throw new Error('Le module audio est absent de cette page.');
+    const context = new AudioContext({latencyHint: 'interactive'});
+    const resume = context.resume();
+    audioPending = (async () => {
+      // Le même module doit pouvoir se charger depuis un fichier local et depuis localhost.
+      const url = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(AUDIO_WORKLET_SOURCE);
+      try {
+        await Promise.all([resume, context.audioWorklet.addModule(url)]);
+        const node = new AudioWorkletNode(context, 'cb-radio', {
+          numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+          channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers',
+        });
+        node.port.onmessage = event => workletMessage(event.data);
+        const micGain = context.createGain();
+        micGain.gain.value = micGainFactor();
+        micGain.connect(node);
+        const rxVolume = context.createGain();
+        rxVolume.gain.value = rxVolumeFactor();
+        node.connect(rxVolume);
+        let element = null;
+        if (typeof context.setSinkId === 'function' || typeof HTMLMediaElement.prototype.setSinkId !== 'function') {
+          rxVolume.connect(context.destination);
+        } else {
+          const sink = context.createMediaStreamDestination();
+          rxVolume.connect(sink);
+          element = new Audio();
+          element.srcObject = sink.stream;
+        }
+        audio = {context, node, element, micGain, rxVolume};
+        if (mic) attachMic();
+        return audio;
+      } catch (error) {
+        await context.close().catch(() => {});
+        throw error;
+      }
+    })().finally(() => { audioPending = null; });
+    return audioPending;
+  }
+  async function chooseSpeaker() {
+    const target = $('speaker').value;
+    const {context, element} = await setupAudio();
+    if (typeof context.setSinkId === 'function') {
+      if (context.sinkId !== target) await context.setSinkId(target);
+    } else if (element) {
+      if (element.sinkId !== target) await element.setSinkId(target);
+      await element.play();
+    } else if (target) {
+      throw new Error('Ce navigateur ne peut pas sélectionner la sortie audio.');
+    }
+  }
+  function attachMic() {
+    if (micSource) { micSource.disconnect(); micSource = null; }
+    if (mic && audio) {
+      micSource = audio.context.createMediaStreamSource(mic);
+      micSource.connect(audio.micGain);
+    }
+  }
+  function enableMicTrack(enabled) {
+    for (const track of mic?.getAudioTracks() || []) track.enabled = enabled;
+  }
+  function stopMic(invalidate = true) {
+    if (invalidate) micGeneration++;
+    if (micSource) { micSource.disconnect(); micSource = null; }
+    for (const track of mic?.getTracks() || []) track.stop();
+    mic = null;
+    micChoice = '';
+  }
+  async function prepareMic() {
+    const choice = $('mic').value;
+    if (mic?.active && micChoice === choice) return;
+    if (micPending) return micPending;
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone inaccessible depuis cette page.');
+    const generation = ++micGeneration;
+    const acquire = navigator.mediaDevices.getUserMedia({audio: {
+      ...(choice ? {deviceId: {exact: choice}} : {}),
+      channelCount: {ideal: 2}, echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+    }});
+    micPending = (async () => {
+      const next = await acquire;
+      if (generation !== micGeneration) {
+        next.getTracks().forEach(track => track.stop());
+        throw new Error('Le poste a été déconnecté.');
+      }
+      stopMic(false);
+      mic = next;
+      micChoice = choice;
+      enableMicTrack(false);
+      attachMic();
+      const track = next.getAudioTracks()[0];
+      track.addEventListener('ended', () => {
+        if (mic !== next) return;
+        releasePtt();
+        stopMic();
+        micMessage('Microphone débranché.');
+      });
+      const channels = track.getSettings().channelCount;
+      micMessage((track.label || 'Microphone') + (channels === 1 ? ' · mono centré' : ' · prêt'));
+      await updateDevices().catch(() => {});
+    })().finally(() => { micPending = null; refreshControls(); });
+    refreshControls();
+    return micPending;
+  }
+  function audioMode(mode, profile = 'HQ') {
+    epoch++;
+    playback = null;
+    audio?.node.port.postMessage({type: 'mode', mode, profile, epoch});
+  }
+  function setSquelch(open) {
+    if (open === squelchOpen) return;
+    squelchOpen = open;
+    audio?.node.port.postMessage({type: 'squelch', open});
+  }
+
+  function updateSignal(magnitude) {
+    const level = Math.max(-85, 20 * Math.log10(Math.max(1, magnitude) / 30000));
+    signalDb = signalDb === null ? level : signalDb + (level - signalDb) * .08;
+    lastSignalAt = performance.now();
+    if (noiseSamples < 150) {
+      noiseDb = noiseDb === null ? level : Math.min(noiseDb + .005, signalDb);
+      noiseSamples++;
+    } else if (signalDb < noiseDb) {
+      noiseDb += (signalDb - noiseDb) * .07;
+    } else if (!squelchOpen && signalDb < noiseDb + 5) {
+      noiseDb += (signalDb - noiseDb) * .0005;
+    }
+    updateSquelch();
+  }
+  function updateSquelch() {
+    const threshold = Number($('squelch').value);
+    const aboveNoise = signalDb === null ? 0 : Math.max(0, signalDb - noiseDb);
+    if (!['rx', 'arming'].includes(state) || performance.now() - lastSignalAt > 180) {
+      carrierSeenAt = 0;
+      setSquelch(false);
+    } else if (!threshold) {
+      setSquelch(true);
+    } else if (noiseSamples >= 100) {
+      if (aboveNoise >= threshold - (squelchOpen ? 3 : 0)) carrierSeenAt = performance.now();
+      if (aboveNoise >= threshold) setSquelch(true);
+      else if (performance.now() - carrierSeenAt > 160) setSquelch(false);
+    }
+  }
+  function showRxStatus() {
+    const active = ['rx', 'arming'].includes(state) && signalDb !== null;
+    const level = active ? Math.round(clamp(signalDb - noiseDb, 0, 60)) : 0;
+    $('signal').value = level;
+    const threshold = Number($('squelch').value);
+    $('squelchValue').value = threshold ? threshold + ' dB au-dessus du bruit' : 'Ouvert en permanence';
+    const audioModeLabel = activeTune?.profile === 'MONO' ? 'Mono' : playback?.pilotLocked ? 'Stéréo' : 'Mono · pilote en attente';
+    $('rxStatus').textContent = (active ? 'Signal +' + level + ' dB · ' + audioModeLabel : 'Signal —') +
+      ' · Squelch ' + (squelchOpen ? 'ouvert' : 'fermé') +
+      (active && missingFrames ? ' · Trames perdues ' + missingFrames : '');
+  }
+  function resetReceiver(keepNoise = false) {
+    expectedIndex = 0;
+    missingFrames = 0;
+    rxUsed = 0;
+    signalDb = null;
+    if (!keepNoise) {
+      noiseDb = null;
+      noiseSamples = 0;
+    }
+    lastSignalAt = 0;
+    carrierSeenAt = 0;
+    setSquelch(false);
+    audioMode('rx', activeTune.profile);
+  }
+  function flushRx() {
+    if (!rxUsed || !audio) return;
+    const samples = rxBuffer.slice(0, rxUsed);
+    audio.node.port.postMessage({type: 'rx', epoch, samples}, [samples.buffer]);
+    rxUsed = 0;
+  }
+  function radioFrame(index, magnitude, payload) {
+    if (state === 'returning' && returnAfterReady && activeTune && index < activeTune.rate) {
+      resumeReceiver(activeTune, activeTune.lo, true);
+    }
+    if (!['rx', 'arming'].includes(state) || !activeTune) return;
+    const gap = (index - expectedIndex) >>> 0;
+    if (gap >= 0x80000000) return;
+    if (gap > 2 * activeTune.rate && performance.now() - lastSignalAt < 180) return;
+    expectedIndex = (index + payloadSize) >>> 0;
+    updateSignal(magnitude);
+    if (gap) {
+      missingFrames += Math.ceil(gap / payloadSize);
+      if (gap > 3600) {
+        rxUsed = 0;
+        audioMode('rx', activeTune.profile);
+        audio?.node.port.postMessage({type: 'squelch', open: squelchOpen});
+      } else {
+        if (rxUsed + gap + payloadSize > rxBuffer.length) flushRx();
+        rxBuffer.fill(0x80, rxUsed, rxUsed + gap);
+        rxUsed += gap;
+      }
+    }
+    if (rxUsed + payloadSize > rxBuffer.length) flushRx();
+    rxBuffer.set(payload, rxUsed);
+    rxUsed += payloadSize;
+    if (rxUsed >= activeTune.rate / 150) flushRx();
+  }
+
+  function config() {
+    const hz = Math.round(Number($('frequency').value.trim().replace(',', '.')) * 1e6);
+    const fine = Number($('fine').value);
+    const profile = $('profile').value;
+    if (!Number.isInteger(hz) || hz < 2401000000 || hz > 2482500000) {
+      throw new Error('Entre une fréquence entre 2 401 et 2 482,5 MHz.');
+    }
+    if (!Number.isInteger(fine) || Math.abs(fine) > 50000) {
+      throw new Error('Entre une correction RX entière entre −50 000 et +50 000 Hz.');
+    }
+    return {hz, fine, profile};
+  }
+  function send(bytes, own = serial) {
+    if (!own?.writer) return Promise.reject(new Error('Port série indisponible.'));
+    const data = typeof bytes === 'string' ? encoder.encode(bytes) : bytes;
+    const written = own.tail.then(() => own.writer.write(data));
+    own.tail = written.catch(() => {});
+    return written;
+  }
+  function sendOrFail(bytes) {
+    const own = serial;
+    void send(bytes, own).catch(error => {
+      if (serial === own) fail('Écriture série interrompue · ' + error.message);
+    });
+  }
+  function tuneRadio() {
+    let next;
+    try { next = config(); }
+    catch (error) {
+      if (state === 'probe') fail(error.message);
+      else message(error.message, true);
+      return;
+    }
+    pendingTune = next;
+    audioMode('idle');
+    setSquelch(false);
+    setState('tuning', 'Accord du récepteur…');
+    expectReply('Le firmware n’a pas confirmé le passage en écoute.');
+    sendOrFail('RX ' + next.hz + ' ' + next.profile + ' ' + next.fine + '\n');
+  }
+  function resumeReceiver(tune, lo, keepNoise) {
+    const unexpected = state === 'tx' || state === 'keying';
+    cancelTimer();
+    clearTxQueue();
+    enableMicTrack(false);
+    pttHold = null;
+    returnAfterReady = false;
+    activeTune = {...tune, lo};
+    pendingTune = null;
+    resetReceiver(keepNoise);
+    $('actual').textContent = 'Accord RX ' + frequencyFormat.format(lo / 1e6) + ' MHz';
+    setState('rx', returnMessage || (unexpected ? 'Émission arrêtée par le poste.' : 'En écoute · ' + tune.profile),
+      returnError || unexpected);
+    returnMessage = '';
+    returnError = false;
+  }
+  function radioLine(line) {
+    if (line === 'OK STATUS CB_FM_STEREO 3' && state === 'probe') {
+      setState('sync', 'Synchronisation du poste…');
+      expectReply('Le firmware ne répond pas à l’initialisation.');
+      sendOrFail('STOP\n');
+      return;
+    }
+    if (line === 'OK STOP' && state === 'sync') {
+      tuneRadio();
+      return;
+    }
+    const received = /^OK RX (\d+) (\d+) (HQ|ROBUST|MONO)$/.exec(line);
+    if (received && ['tuning', 'returning', 'tx', 'keying'].includes(state)) {
+      const [lo, rate, profile] = [Number(received[1]), Number(received[2]), received[3]];
+      const next = pendingTune || activeTune;
+      if (!next || profiles[profile] !== rate || profile !== next.profile ||
+          Math.abs(lo - next.hz - next.fine) > 4000) return;
+      resumeReceiver({...next, rate}, lo, !pendingTune && Boolean(activeTune));
+      return;
+    }
+    if (/^ERR TX_/.test(line) && ['keying', 'tx', 'returning'].includes(state)) {
+      finishTransmit('Émission interrompue par le firmware · ' + line.slice(4), true);
+    } else if (/^ERR /.test(line) && ['sync', 'tuning'].includes(state)) {
+      fail('Le poste signale une erreur · ' + line.slice(4));
+    }
+  }
+  function radioReady() {
+    if (state === 'returning') returnAfterReady = true;
+    if (state !== 'keying' || !pttHold) return;
+    cancelTimer();
+    setState('tx', 'Passage en émission…');
+    pumpTx();
+  }
+  function workletMessage(data) {
+    if (data.epoch !== epoch) return;
+    if (data.type === 'rx-status') { playback = data; return; }
+    if (data.type !== 'tx' || !['keying', 'tx'].includes(state) || !pttHold) return;
+    const samples = data.samples;
+    if (!(samples instanceof Uint8Array) || samples.length !== txChunkBytes) {
+      if (state === 'tx') finishTransmit('Bloc audio invalide. Retour en écoute.', true);
+      return;
+    }
+    if (queuedTxBytes >= txQueueLimit) {
+      // Un bloc de 5 ms contient un nombre entier de cycles du pilote stéréo.
+      txQueue.shift();
+      queuedTxBytes -= txChunkBytes;
+    }
+    queuedTxBytes += samples.length;
+    txQueue.push(samples);
+    pumpTx();
+  }
+  function clearTxQueue() { txQueue = []; queuedTxBytes = 0; txPrimed = false; }
+  function pumpTx() {
+    if (state !== 'tx' || !pttHold || txWriting) return;
+    if (!txPrimed) {
+      if (queuedTxBytes < txPrerollBytes) return;
+      txPrimed = true;
+      setState('tx', 'En émission FM stéréo.');
+    } else if (queuedTxBytes < txWriteBytes) {
+      return;
+    }
+    const samples = new Uint8Array(txWriteBytes);
+    for (let offset = 0; offset < txWriteBytes; offset += txChunkBytes) {
+      samples.set(txQueue.shift(), offset);
+    }
+    queuedTxBytes -= txWriteBytes;
+    const own = serial;
+    txWriting = true;
+    send(samples, own).catch(error => {
+      if (serial === own) fail('L’envoi audio a échoué · ' + error.message);
+    }).finally(() => {
+      if (serial === own) { txWriting = false; pumpTx(); }
+    });
+  }
+  async function pressPtt(hold) {
+    if (state !== 'rx' || pttHold) return;
+    pttHold = hold;
+    const own = serial;
+    setState('arming');
+    try {
+      await prepareMic();
+      if (serial !== own || pttHold !== hold || state !== 'arming') return;
+      setSquelch(false);
+      clearTxQueue();
+      enableMicTrack(true);
+      audioMode('tx');
+      setState('keying', 'Demande d’émission…');
+      expectReply('Le poste ne s’est pas déclaré prêt à émettre.');
+      sendOrFail(Uint8Array.of(pttByte));
+    } catch (error) {
+      if (serial !== own || pttHold !== hold) return;
+      pttHold = null;
+      setState('rx', 'Microphone indisponible · ' + error.message, true);
+    }
+  }
+  function finishTransmit(text = '', error = false) {
+    if (!['keying', 'tx', 'returning'].includes(state)) return;
+    if (state === 'tx') returnAfterReady = true;
+    pttHold = null;
+    clearTxQueue();
+    enableMicTrack(false);
+    audioMode('idle');
+    returnMessage = text;
+    returnError = error;
+    setState('returning', text || 'Retour en écoute…', error);
+    expectReply('Le poste n’a pas confirmé le retour en écoute.');
+  }
+  function releasePtt() {
+    pttHold = null;
+    if (state === 'arming') setState('rx');
+    else if (state === 'tx' || state === 'keying') finishTransmit();
+  }
+
+  async function readSerial(own) {
+    const parser = new SerialParser(radioFrame, radioLine, radioReady);
+    try {
+      while (serial === own && !own.closing && own.port.readable) {
+        const reader = own.port.readable.getReader();
+        own.reader = reader;
+        try {
+          while (serial === own && !own.closing) {
+            const {value, done} = await reader.read();
+            if (done) return;
+            if (value?.length) parser.feed(value);
+          }
+        } catch (error) {
+          if (!own.port.readable) throw error;
+          parser.rest = new Uint8Array(0);
+        } finally {
+          reader.releaseLock();
+          if (own.reader === reader) own.reader = null;
+        }
+      }
+    } catch (error) {
+      if (serial === own && !own.closing) fail('Port série interrompu · ' + error.message);
+    } finally {
+      if (serial === own && !own.closing) fail('Le port série s’est déconnecté.');
+    }
+  }
+  async function connect() {
+    if (!navigator.serial) {
+      message('Web Serial indisponible. Ouvre la page dans Chrome ou Edge sur localhost.', true);
+      return;
+    }
+    try { config(); }
+    catch (error) { message(error.message, true); return; }
+    setState('connecting', 'Choisis le port de ton poste.');
+    let chosen = null;
+    try {
+      const choice = navigator.serial.requestPort();
+      const ready = setupAudio();
+      const result = await Promise.all([choice, ready]);
+      chosen = result[0];
+      try { await chooseSpeaker(); }
+      catch (error) { micMessage('Sortie audio · ' + error.message); }
+      await chosen.open({baudRate: 2000000, dataBits: 8, stopBits: 1, parity: 'none',
+        flowControl: 'none', bufferSize: 65536});
+      const own = {port: chosen, writer: chosen.writable.getWriter(), reader: null,
+        tail: Promise.resolve(), closing: false, readTask: null};
+      serial = own;
+      own.readTask = readSerial(own);
+      setState('probe', 'Vérification du firmware C.B. à 2 Mbaud…');
+      expectReply('Aucune réponse du firmware C.B. Vérifie le port et le fichier .ino.', 2600);
+      await delay(420);
+      for (let attempt = 0; attempt < 3 && serial === own && state === 'probe'; attempt++) {
+        await send('STATUS\n', own);
+        await delay(350);
+      }
+    } catch (error) {
+      if (serial) fail('Connexion série impossible · ' + error.message);
+      else {
+        if (chosen) await chosen.close().catch(() => {});
+        setState('off', error.name === 'NotFoundError' ? 'Aucun port sélectionné.' : error.message,
+          error.name !== 'NotFoundError');
+      }
+    }
+  }
+  async function disconnect(text = 'Port série fermé.', error = false) {
+    const own = serial;
+    if (state === 'closing') return;
+    const lastState = state;
+    cancelTimer();
+    pttHold = null;
+    holdingPointer = null;
+    audioMode('idle');
+    setSquelch(false);
+    clearTxQueue();
+    stopMic();
+    micMessage('Prépare le microphone avant le premier appel.');
+    txWriting = false;
+    returnAfterReady = false;
+    activeTune = null;
+    pendingTune = null;
+    returnMessage = '';
+    returnError = false;
+    $('actual').textContent = 'Accord RX —';
+    setState('closing', text, error);
+    if (own) {
+      own.closing = true;
+      try {
+        if (['rx', 'arming', 'sync', 'tuning'].includes(lastState)) {
+          await Promise.race([send('\nSTOP\n', own), delay(180)]);
+        }
+      } catch (_) {}
+      serial = null;
+      try { await own.reader?.cancel(); } catch (_) {}
+      try { await own.readTask; } catch (_) {}
+      try { await Promise.race([own.writer.abort(), delay(180)]); } catch (_) {}
+      try { own.writer.releaseLock(); } catch (_) {}
+      try { await own.port.close(); } catch (_) {}
+    }
+    setState('off', text, error);
+    showRxStatus();
+  }
+  function fail(text) { if (state !== 'closing') void disconnect(text, true); }
+
+  $('serial').onclick = () => state === 'off' ? void connect() : void disconnect();
+  $('enableMic').onclick = () => {
+    void prepareMic().catch(error => micMessage('Microphone indisponible · ' + error.message));
+  };
+  $('mic').onchange = () => {
+    void prepareMic().catch(error => micMessage('Microphone indisponible · ' + error.message));
+  };
+  $('speaker').onchange = () => {
+    void chooseSpeaker().catch(error => {
+      $('speaker').value = '';
+      micMessage('Sortie audio · ' + error.message);
+    });
+  };
+  $('preset').onchange = () => {
+    if ($('preset').value !== 'manual') {
+      $('frequency').value = $('preset').value.replace('.', ',');
+      if (state === 'rx') tuneRadio();
+    } else $('frequency').focus();
+  };
+  $('frequency').oninput = () => { $('preset').value = 'manual'; };
+  $('frequency').onkeydown = event => {
+    if (event.key === 'Enter' && state === 'rx') { event.preventDefault(); tuneRadio(); }
+  };
+  $('profile').onchange = () => { if (state === 'rx') tuneRadio(); };
+  $('tune').onclick = () => { if (state === 'rx') tuneRadio(); };
+  $('squelch').oninput = () => { updateSquelch(); showRxStatus(); };
+  $('micGain').oninput = () => {
+    const db = Number($('micGain').value);
+    const label = (db > 0 ? '+' : '') + db + ' dB';
+    $('micGainValue').value = label;
+    $('micGain').setAttribute('aria-valuetext', label);
+    if (audio) audio.micGain.gain.setTargetAtTime(micGainFactor(), audio.context.currentTime, .01);
+  };
+  $('rxVolume').oninput = () => {
+    $('rxVolumeValue').value = $('rxVolume').value + ' %';
+    if (audio) audio.rxVolume.gain.setTargetAtTime(rxVolumeFactor(), audio.context.currentTime, .01);
+  };
+  $('ptt').onpointerdown = event => {
+    if (event.button !== 0 || state !== 'rx' || pttHold) return;
+    event.preventDefault();
+    holdingPointer = event.pointerId;
+    $('ptt').setPointerCapture(event.pointerId);
+    void pressPtt('pointer');
+  };
+  function endPointer(event) {
+    if (holdingPointer !== event.pointerId) return;
+    holdingPointer = null;
+    if (pttHold === 'pointer') releasePtt();
+  }
+  $('ptt').onpointerup = endPointer;
+  $('ptt').onpointercancel = endPointer;
+  $('ptt').onlostpointercapture = endPointer;
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && pttHold) { releasePtt(); return; }
+    if (event.code !== 'Space' || (event.target !== $('ptt') && event.target?.closest?.('input, select, textarea, button, [contenteditable]'))) return;
+    if (state === 'rx' || pttHold === 'keyboard') {
+      event.preventDefault();
+      if (!event.repeat) void pressPtt('keyboard');
+    }
+  });
+  document.addEventListener('keyup', event => {
+    if (event.code === 'Space' && pttHold === 'keyboard') { event.preventDefault(); releasePtt(); }
+  });
+  window.addEventListener('blur', () => { if (pttHold) releasePtt(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && pttHold) releasePtt();
+  });
+  window.addEventListener('pagehide', () => {
+    if (serial) void disconnect();
+    else stopMic();
+  });
+  navigator.serial?.addEventListener('disconnect', event => {
+    if (serial && (event.target === serial.port || event.port === serial.port)) fail('Le câble série a été débranché.');
+  });
+  navigator.mediaDevices?.addEventListener('devicechange', () => { void updateDevices().catch(() => {}); });
+  void updateDevices().catch(() => {});
+  setInterval(() => { updateSquelch(); showRxStatus(); }, 100);
+  refreshControls();
+</script>
+</body>
+</html>
