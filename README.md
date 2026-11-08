@@ -1,3 +1,5 @@
+<img width="1013" height="865" alt="Capture d’écran 2026-11-08 083312" src="https://github.com/user-attachments/assets/581b1049-cab8-4d06-9ce0-91fc687d9722" />
+RX AND TX SUPPORTED !!!!!!!!!
 # ESP-AnalogRadio
 
 <img width="1024" height="770" alt="92189aef-31ac-4b0d-b6dd-0ef7a945d5f4" src="https://github.com/user-attachments/assets/ebba6e2f-2e76-49cc-b273-e5e3e0eb69e6" />
