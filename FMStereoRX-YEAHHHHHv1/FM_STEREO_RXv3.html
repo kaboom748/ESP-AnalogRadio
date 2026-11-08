@@ -1,0 +1,1327 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FMStereoRX · Récepteur 2,4 GHz</title>
+<style>
+:root{color-scheme:dark;--bg:#11181f;--panel:#1a252e;--line:#354550;--text:#edf5f7;--muted:#abc0cb;--signal:#75e6bf;--warn:#ffd085;--bad:#ff9c9c;font:16px/1.5 system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}main{max-width:900px;margin:auto;padding:34px 20px 44px}header{border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:18px}h1{font-size:clamp(1.8rem,6vw,3rem);line-height:1.1;margin:4px 0 8px;letter-spacing:-.035em}h2{margin:0 0 14px;font-size:1.12rem}p{margin:6px 0}.tag{font-size:.8rem;letter-spacing:.14em;color:var(--signal);text-transform:uppercase}.muted,small{color:var(--muted)}section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px}label{display:flex;flex-direction:column;gap:5px;font-size:.86rem;color:var(--muted)}input,select,button{font:inherit;color:var(--text);background:#111c24;border:1px solid #45616e;border-radius:7px;padding:8px 10px;min-width:0}button{cursor:pointer;font-weight:650}button:hover:not(:disabled){border-color:var(--signal)}button:disabled{opacity:.48;cursor:default}.primary{background:var(--signal);color:#102620;border-color:var(--signal)}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.status{min-height:1.5em;margin-top:12px;color:var(--signal);overflow-wrap:anywhere}.status.error{color:var(--bad)}dl{margin:0}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}.metrics div{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#142027}.metrics dt{font-size:.79rem;color:var(--muted)}.metrics dd{margin:3px 0 0;font:600 1rem/1.3 ui-monospace,monospace;overflow-wrap:anywhere}.meter{height:6px;background:#11181f;border-radius:4px;margin-top:7px;overflow:hidden}.meter span{display:block;width:0;height:100%;background:var(--signal)}details{color:var(--muted);font-size:.9rem;margin-top:14px}summary{cursor:pointer}code{color:var(--text)}
+.inline-check{flex-direction:row;align-items:center;align-self:end;gap:9px;min-height:42px}.inline-check input{accent-color:var(--signal)}.rds-fields{margin-top:12px}.wide-field{grid-column:1/-1}.rds-status{color:var(--muted);min-height:1.5em}.rds-status.locked{color:var(--signal)}.rds-status.error{color:var(--warn)}
+</style>
+<main>
+  <header><div class="tag">Réception · ESP8266</div><h1>FMStereoRX</h1><p class="muted">FM stéréo expérimentale sur 2,4 GHz. L’ESP8266 démodule la FM et le navigateur décode le multiplex.</p></header>
+  <section aria-labelledby="radioTitle">
+    <h2 id="radioTitle">Radio</h2>
+    <div class="grid">
+      <label>Préréglage TX<select id="preset"><option value="2412.3125">2412,3125 MHz</option><option selected value="2442.3125">2442,3125 MHz</option><option value="2462.3125">2462,3125 MHz</option><option value="manual">Manuel</option></select></label>
+      <label>Fréquence RX (MHz)<input id="frequency" value="2442,3125" inputmode="decimal" spellcheck="false"></label>
+      <label>Profil<select id="mode"><option value="HQ">HQ · stéréo 120 kHz</option><option value="ROBUST">ROBUST · stéréo 96 kHz</option><option value="MONO">MONO · 48 kHz</option></select></label>
+      <label>Désaccentuation<select id="deemphasis"><option selected value="75">75 µs · Amérique du Nord</option><option value="50">50 µs</option><option value="0">Désactivée</option></select></label>
+    </div>
+    <p><small>Entre la fréquence mesurée si l’émetteur est décalé. Le profil ROBUST limite la bande audio à environ 8 kHz.</small></p>
+    <div class="actions"><button id="connect">Ouvrir le port</button><button id="start" class="primary" disabled>Recevoir</button><button id="stop" disabled>Arrêter</button><button id="close" disabled>Fermer le port</button></div>
+    <p id="status" class="status" role="status">Port fermé.</p>
+  </section>
+  <section aria-labelledby="statsTitle">
+    <h2 id="statsTitle">Réception et lecture</h2>
+    <dl class="metrics">
+      <div><dt>Fréquence accordée</dt><dd id="actual">—</dd></div><div><dt>Multiplex</dt><dd id="mpxRate">—</dd></div><div><dt>Pilote 19 kHz</dt><dd id="pilot">—</dd><div class="meter" aria-hidden="true"><span id="pilotMeter"></span></div></div><div><dt>Sortie</dt><dd id="stereo">—</dd></div>
+      <div><dt>Trames valides</dt><dd id="frames">0</dd></div><div><dt>Erreurs CRC</dt><dd id="crc">0</dd></div><div><dt>Échantillons perdus au transport</dt><dd id="missing">0</dd></div><div><dt>Trous de transport et maximum</dt><dd id="gaps">0 · 0 ms</dd></div>
+      <div><dt>Échantillons marqués invalides</dt><dd id="invalid">0</dd></div><div><dt>Trous d’acquisition et maximum</dt><dd id="acqGaps">0 · 0 ms</dd></div>
+      <div><dt>Tampon audio</dt><dd id="buffer">—</dd></div><div><dt>Interruptions audio</dt><dd id="underruns">0</dd></div><div><dt>Échantillons de lecture écartés</dt><dd id="discarded">0</dd></div><div><dt>Trames hors ordre</dt><dd id="late">0</dd></div>
+      <div><dt>Erreurs de lecture série</dt><dd id="serialErrors">0</dd></div>
+    </dl>
+    <details id="deviceDetails"><summary>Dernier message de l’ESP8266</summary><code id="deviceMessage">—</code></details>
+  </section>
+  <section aria-labelledby="rdsTitle">
+    <h2 id="rdsTitle">Station et messages RDS</h2>
+    <div class="grid">
+      <label>Profil régional<select id="rdsProfile"><option value="RBDS">RBDS · Amérique du Nord</option><option value="RDS">RDS · International</option></select></label>
+      <label class="inline-check"><input id="rdsEnabled" type="checkbox" checked> Décoder le RDS en profil HQ</label>
+    </div>
+    <p id="rdsStatus" class="rds-status" role="status">En attente du multiplex HQ.</p>
+    <dl class="metrics rds-fields">
+      <div><dt>Nom court PS / Décompte</dt><dd id="rdsPs">—</dd></div><div><dt>Code PI</dt><dd id="rdsPi">—</dd></div><div><dt>Type de programme PTY</dt><dd id="rdsPty">—</dd></div><div><dt>Libellé PTYN</dt><dd id="rdsPtyn">—</dd></div>
+      <div class="wide-field"><dt>RadioText</dt><dd id="rdsRadioText">—</dd></div><div><dt>Format RadioText</dt><dd id="rdsRadioTextMode">—</dd></div><div><dt>Indicateur A/B</dt><dd id="rdsRadioTextAB">—</dd></div><div><dt>Music (M/S)</dt><dd id="rdsMusic">—</dd></div><div><dt>Code pays étendu ECC</dt><dd id="rdsEcc">—</dd></div>
+      <div class="wide-field"><dt>Nom long Long PS</dt><dd id="rdsLongPs">—</dd></div><div><dt>TP · Service routier</dt><dd id="rdsTp">—</dd></div><div><dt>TA · Annonce routière</dt><dd id="rdsTa">—</dd></div><div><dt>DI · Stéréo</dt><dd id="rdsDiStereo">—</dd></div><div><dt>DI · Tête artificielle</dt><dd id="rdsDiHead">—</dd></div>
+      <div><dt>DI · Compression audio</dt><dd id="rdsDiCompressed">—</dd></div><div><dt>DI/PTYI · PTY variable</dt><dd id="rdsDiDynamic">—</dd></div>
+    </dl>
+    <details><summary>Diagnostics RDS</summary><dl class="metrics rds-fields">
+      <div><dt>Groupes valides</dt><dd id="rdsGroups">0</dd></div><div><dt>Blocs valides</dt><dd id="rdsBlocks">0</dd></div><div><dt>Erreurs CRC RDS</dt><dd id="rdsErrors">0</dd></div><div><dt>Fréquence du pilote</dt><dd id="rdsPilot">—</dd></div><div><dt>Échantillons ignorés par le RDS</dt><dd id="rdsSkipped">0</dd></div>
+      <div><dt>Code pays PI</dt><dd id="rdsPiCountry">—</dd></div><div><dt>Couverture PI</dt><dd id="rdsPiCoverage">—</dd></div><div><dt>Référence PI</dt><dd id="rdsPiReference">—</dd></div><div><dt>Indicateur A/B PTYN</dt><dd id="rdsPtynAB">—</dd></div><div class="wide-field"><dt>Groupes par type</dt><dd id="rdsGroupTypes">—</dd></div>
+    </dl></details>
+  </section>
+  <section aria-labelledby="fileTitle">
+    <h2 id="fileTitle">Essai hors ligne</h2>
+    <div class="grid"><label>Fichier MPX8 brut, échantillons signés<input id="file" type="file" accept=".mpx8,.bin,application/octet-stream"></label><label>Cadence du fichier<select id="fileRate"><option value="120000">120 kHz · HQ</option><option value="96000">96 kHz · ROBUST</option><option value="48000">48 kHz · MONO</option></select></label></div>
+    <div class="actions"><button id="playFile" disabled>Lire le fichier</button><button id="stopFile" disabled>Arrêter le fichier</button></div>
+  </section>
+  <p class="muted"><small>Pour recevoir en direct, ouvre ce fichier dans Chrome ou Edge sur le poste relié à l’ESP8266. Choisis le port USB-série de la carte RX. Détection automatique à 1,5 ou 2 Mbaud, 8N2.</small></p>
+</main>
+<script id="rdsWorkerSource" type="text/plain">
+/* FMS_RDS_WORKER_BEGIN */
+/* Streaming RDS decoder. Input: signed MPX8 at 120000 samples/s. */
+'use strict';
+
+const MPX_RATE = 120000;
+const BASE_RATE = 20000;
+const DECIMATION = MPX_RATE / BASE_RATE;
+const FILTER_LENGTH = 257;
+const PILOT_FREQUENCY = 19000;
+const NOMINAL_BIT_PERIOD = 16 * BASE_RATE / PILOT_FREQUENCY;
+const GROUP_SECONDS = 104 * 16 / PILOT_FREQUENCY;
+const PHASE_COUNT = 34;
+const POLYNOMIAL = 0x5b9;
+const OFFSET_A = 0x0fc, OFFSET_B = 0x198, OFFSET_C = 0x168, OFFSET_CP = 0x350, OFFSET_D = 0x1b4;
+const PTY = {
+  RBDS: ['Aucun','Actualités','Information','Sports','Talk','Rock','Classic Rock','Adult Hits','Soft Rock','Top 40','Country','Oldies','Soft','Nostalgie','Jazz','Classique','R&B','Soft R&B','Langues étrangères','Musique religieuse','Parole religieuse','Personnalité','Public','College','Non attribué','Non attribué','Non attribué','Non attribué','Non attribué','Météo','Essai d’alarme','Alarme'],
+  RDS: ['Aucun','Actualités','Affaires courantes','Information','Sports','Éducation','Théâtre','Culture','Science','Divers','Pop','Rock','Musique légère','Classique léger','Classique','Autre musique','Météo','Finance','Enfants','Société','Religion','Tribune','Voyage','Loisirs','Jazz','Country','Musique nationale','Oldies','Folk','Documentaire','Essai d’alarme','Alarme']
+};
+
+const checksumTable = Uint16Array.from({length:256}, (_, byte) => {
+  let crc = byte << 2;
+  for (let bit=0; bit<8; bit++) crc = ((crc<<1) ^ (crc&512 ? POLYNOMIAL : 0)) & 1023;
+  return crc;
+});
+
+function syndrome(word) {
+  const data = word>>>10;
+  const high = checksumTable[data>>>8];
+  return ((high<<8)&1023) ^ checksumTable[(high>>>2) ^ (data&255)] ^ (word&1023);
+}
+
+const lowPass = Float64Array.from({length:FILTER_LENGTH}, (_, i) => {
+  const distance = i-(FILTER_LENGTH-1)/2;
+  const norm = 2*2550/MPX_RATE;
+  const sinc = distance===0 ? norm : Math.sin(Math.PI*norm*distance)/(Math.PI*distance);
+  const phase = 2*Math.PI*i/(FILTER_LENGTH-1);
+  return sinc*(.42-.5*Math.cos(phase)+.08*Math.cos(2*phase));
+});
+const dcGain = lowPass.reduce((a,b)=>a+b,0);
+for (let i=0; i<lowPass.length; i++) lowPass[i] /= dcGain;
+
+const MATCH_LENGTH = Math.round(NOMINAL_BIT_PERIOD);
+const matchTaps = Float64Array.from({length:MATCH_LENGTH}, (_,i)=>Math.sin(2*Math.PI*(i+.5)/MATCH_LENGTH));
+
+const bytes = word => [word>>>8, word&255];
+const hex = (value,width) => value.toString(16).toUpperCase().padStart(width,'0');
+const ascii = value => String.fromCharCode(...value.map(x=>x>=32 && x<=126 ? x : 63)).trimEnd();
+const utf8 = new TextDecoder('utf-8');
+const COUNTDOWN_TEXT = /^[0-8]:[0-5]\d$/;
+
+class TextAssembly {
+  constructor(size) { this.size=size; this.parts=[]; }
+
+  clear() { this.parts=[]; }
+
+  add(index, part, terminator) {
+    if (!index) this.clear();
+    if (index!==this.parts.length || index>=this.size) {
+      this.clear();
+      return null;
+    }
+    this.parts.push(part);
+    const complete = this.parts.length===this.size || (terminator && part.includes(13));
+    if (!complete) return null;
+    const value=this.parts.flat();
+    this.clear();
+    const end=value.indexOf(13);
+    return terminator && end>=0 ? value.slice(0,end) : value;
+  }
+}
+
+class TaggedTextAssembly {
+  constructor(size) { this.size=size; this.clear(); }
+
+  clear() { this.parts=new Array(this.size); }
+
+  add(index, part, terminator) {
+    const previous=this.parts[index];
+    if (previous && part.some((value,i)=>value!==previous[i])) this.clear();
+    this.parts[index]=part;
+    const value=[];
+    for (let i=0; i<this.size; i++) {
+      const segment=this.parts[i];
+      if (!segment) return null;
+      const end=terminator ? segment.indexOf(13) : -1;
+      if (end>=0) return [...value,...segment.slice(0,end)];
+      value.push(...segment);
+    }
+    return value;
+  }
+}
+
+class CountdownPS {
+  reset() {
+    this.prefix=null;
+    this.anchor=null;
+    this.confirmed=false;
+  }
+
+  add(b,word,at) {
+    const index=b&3, flags=b&0xfff8, first=word>>>8, second=word&255;
+    if (index===0) {
+      this.prefix=first>=48 && first<=56 && second===58 ? {minute:first-48,flags,at} : null;
+      return;
+    }
+    if (index!==1 || first<48 || first>53 || second<48 || second>57) return;
+    const seconds=(first-48)*10+second-48, prefix=this.prefix;
+    this.prefix=null;
+    const adjacent=prefix?.flags===flags && Math.abs(at-prefix.at-GROUP_SECONDS)<.004;
+    const anchor=this.anchor;
+    const age=anchor?.flags===flags ? at-anchor.at : Infinity;
+    let value;
+    if (adjacent) {
+      value=prefix.minute*60+seconds;
+    } else if (this.confirmed && age<15) {
+      // Once synchronized, an exact seconds word can refresh the clock.
+      // Test the adjacent second on each side for the second PS repetition.
+      const expected=anchor.value-Math.round(age);
+      value=[expected,expected-1,expected+1].find(n=>n>0 && n<=anchor.value && n%60===seconds);
+    }
+    if (!value || value>500 || (age<1 && value===anchor.value)) return;
+    this.confirmed=age<35 && value<anchor.value && Math.abs(anchor.value-value-age)<.8;
+    this.anchor={value,flags,at};
+  }
+
+  snapshot(at,ps) {
+    if (!this.anchor) return null;
+    const age=at-this.anchor.at;
+    if (!this.confirmed && (age>1.25 || (ps && !COUNTDOWN_TEXT.test(ps)))) return null;
+    const elapsed=this.confirmed ? Math.floor(age) : 0;
+    const value=this.anchor.value-elapsed;
+    if (age>6 || value<1) return {text:null,estimated:false};
+    return {text:`${Math.floor(value/60)}:${String(value%60).padStart(2,'0')}`,estimated:elapsed>0};
+  }
+}
+
+class Station {
+  constructor() {
+    this.psParts=new TextAssembly(4);
+    this.radioTextParts=new TaggedTextAssembly(16);
+    this.ptynParts=new TaggedTextAssembly(2);
+    this.longPsParts=new TextAssembly(8);
+    this.countdown=new CountdownPS();
+    this.reset();
+  }
+
+  clearParts() {
+    this.psParts.clear();
+    this.pendingDI=[];
+    this.radioTextParts.clear();
+    this.ptynParts.clear();
+    this.longPsParts.clear();
+    this.countdown.reset();
+  }
+
+  reset() {
+    this.clearParts();
+    this.fields={
+      pi:null, countryCode:null, programCoverage:null, referenceNumber:null,
+      ps:null, pty:null, ptyLabel:null, ptyn:null, ptynAB:null,
+      radioText:null, radioTextMode:null, radioTextAB:null,
+      music:null, tp:null, ta:null,
+      di:{stereo:null, artificialHead:null, compressed:null, dynamicPty:null},
+      longPs:null, ecc:null
+    };
+  }
+
+  apply(a,b,c,d) {
+    const pi=hex(a,4);
+    if (this.fields.pi!==pi) {
+      this.reset();
+      this.fields.pi=pi;
+      this.fields.countryCode=a>>>12;
+      this.fields.programCoverage=(a>>>8)&15;
+      this.fields.referenceNumber=a&255;
+    }
+    const field=this.fields;
+    const kind=b>>>12, versionB=Boolean(b&0x800), ab=Boolean(b&16);
+    field.pty=(b>>>5)&31;
+    field.tp=Boolean(b&0x400);
+    if (kind===0) {
+      const index=b&3;
+      field.ta=ab;
+      field.music=Boolean(b&8);
+      if (!index) this.pendingDI=[];
+      if (index===this.pendingDI.length) this.pendingDI.push(Boolean(b&4));
+      else this.pendingDI=[];
+      const assembled=this.psParts.add(index,bytes(d),false);
+      if (assembled!==null) {
+        field.ps=ascii(assembled);
+        if (!COUNTDOWN_TEXT.test(field.ps)) this.countdown.reset();
+        const [dynamicPty,compressed,artificialHead,stereo]=this.pendingDI;
+        field.di={stereo,artificialHead,compressed,dynamicPty};
+        this.pendingDI=[];
+      }
+    } else if (kind===1 && !versionB && ((c>>>12)&7)===0) {
+      field.ecc=hex(c&255,2);
+    } else if (kind===2) {
+      const mode=versionB?'2B':'2A';
+      if (field.radioTextMode!==mode || field.radioTextAB!==ab) {
+        this.radioTextParts.clear();
+        field.radioText=null;
+        field.radioTextMode=mode;
+        field.radioTextAB=ab;
+      }
+      const part=versionB ? bytes(d) : [...bytes(c),...bytes(d)];
+      const assembled=this.radioTextParts.add(b&15,part,true);
+      if (assembled!==null) field.radioText=ascii(assembled);
+    } else if (kind===10 && !versionB) {
+      if (field.ptynAB!==ab) {
+        this.ptynParts.clear();
+        field.ptyn=null;
+        field.ptynAB=ab;
+      }
+      const assembled=this.ptynParts.add(b&1,[...bytes(c),...bytes(d)],false);
+      if (assembled!==null) field.ptyn=ascii(assembled);
+    } else if (kind===15 && !versionB) {
+      field.ta=ab;
+      const assembled=this.longPsParts.add(b&7,[...bytes(c),...bytes(d)],true);
+      if (assembled!==null) field.longPs=utf8.decode(Uint8Array.from(assembled)).trimEnd();
+    }
+  }
+
+  snapshot(profile,at) {
+    const result={...this.fields,di:{...this.fields.di}};
+    if (result.pty!==null) result.ptyLabel=PTY[profile][result.pty];
+    result.countdown=this.countdown.snapshot(at,result.ps);
+    return result;
+  }
+}
+
+class TimingPhase {
+  constructor(id) {
+    this.id=id;
+    this.syndromes=new Uint16Array(128);
+    this.words=new Uint16Array(128);
+    this.reset();
+  }
+
+  reset() {
+    this.next=1+this.id*NOMINAL_BIT_PERIOD/PHASE_COUNT;
+    this.bit=-1;
+    this.shift=0;
+    this.previousI=0;
+    this.previousQ=0;
+    this.hasPrevious=false;
+    this.energy=0;
+    this.lockBit=null;
+  }
+
+  sample(i,q,baseIndex,owner) {
+    this.energy+=.02*(i*i+q*q-this.energy);
+    if (!this.hasPrevious) {
+      this.hasPrevious=true;
+    } else {
+      const bit=this.previousI*i+this.previousQ*q<0 ? 1 : 0;
+      this.shift=((this.shift<<1)|bit)&0x3ffffff;
+      const n=++this.bit;
+      const remainder=syndrome(this.shift);
+      this.syndromes[n&127]=remainder;
+      this.words[n&127]=this.shift>>>10;
+      if (n>=103 && remainder===OFFSET_D) {
+        const blockB=this.words[(n-52)&127];
+        if (this.syndromes[(n-78)&127]===OFFSET_A &&
+            this.syndromes[(n-52)&127]===OFFSET_B) {
+          const blockA=this.words[(n-78)&127];
+          const blockC=this.words[(n-26)&127];
+          const blockD=this.words[n&127], versionB=Boolean(blockB&0x800);
+          if (this.syndromes[(n-26)&127]===(versionB ? OFFSET_CP : OFFSET_C) &&
+              (!versionB || blockC===blockA)) {
+            owner.group(this,baseIndex,blockA,blockB,blockC,blockD);
+          }
+          // Group 0A stores the PS in block D. Block C carries AF and is
+          // independent of the verified A/B/D blocks used for the countdown.
+          if (blockB>>>11===0) owner.countdownFragment(baseIndex,blockA,blockB,blockD);
+        }
+      }
+      if (owner.selected===this && this.lockBit!==null && n>this.lockBit &&
+          (n-this.lockBit)%26===0 && owner.isLocked()) {
+        const which=((n-this.lockBit)/26)%4;
+        const valid=which===1 ? remainder===OFFSET_A :
+          which===2 ? remainder===OFFSET_B :
+          which===3 ? remainder===OFFSET_C || remainder===OFFSET_CP : remainder===OFFSET_D;
+        if (!valid) owner.crcErrors++;
+      }
+    }
+    this.previousI=i;
+    this.previousQ=q;
+  }
+}
+
+class RdsReceiver {
+  constructor(send) {
+    this.send=send;
+    this.firI=new Float64Array(2*FILTER_LENGTH);
+    this.firQ=new Float64Array(2*FILTER_LENGTH);
+    this.matchI=new Float64Array(2*MATCH_LENGTH);
+    this.matchQ=new Float64Array(2*MATCH_LENGTH);
+    this.phases=Array.from({length:PHASE_COUNT},(_,i)=>new TimingPhase(i));
+    this.station=new Station();
+    this.reset('RBDS');
+  }
+
+  reset(profile) {
+    this.profile=String(profile??'RBDS').toUpperCase()==='RDS'?'RDS':'RBDS';
+    this.expected=null;
+    this.mpxSamples=0;
+    this.gapSamples=0;
+    this.groups=0;
+    this.crcErrors=0;
+    this.groupCounts={};
+    this.station.reset();
+    this.lastReportedSamples=0;
+    this.resetSignal();
+  }
+
+  resetSignal() {
+    this.firI.fill(0);
+    this.firQ.fill(0);
+    this.matchI.fill(0);
+    this.matchQ.fill(0);
+    this.firPos=0;
+    this.matchPos=0;
+    this.decPhase=0;
+    this.baseIndex=0;
+    this.previousMatchI=0;
+    this.previousMatchQ=0;
+    this.sin=0;
+    this.cos=1;
+    this.pilotI=this.pilotQ=this.pilotI2=this.pilotQ2=0;
+    this.pilotTick=0;
+    this.pilotAlpha=1-Math.exp(-2*Math.PI*250/MPX_RATE);
+    this.pilotAmp=0;
+    this.pilotOffset=0;
+    this.updateOscillator();
+    this.lastGroupAt=-Infinity;
+    this.groupSample=-Infinity;
+    this.countdownGroupSample=-Infinity;
+    this.selected=null;
+    for (const phase of this.phases) phase.reset();
+  }
+
+  updateOscillator() {
+    const step=2*Math.PI*(PILOT_FREQUENCY+this.pilotOffset)/MPX_RATE;
+    this.stepSin=Math.sin(step);
+    this.stepCos=Math.cos(step);
+    this.period=16*BASE_RATE/(PILOT_FREQUENCY+this.pilotOffset);
+  }
+
+  isLocked() { return this.mpxSamples-this.lastGroupAt<.65*MPX_RATE; }
+
+  status(force=false) {
+    if (!force && this.mpxSamples-this.lastReportedSamples<MPX_RATE/5) return;
+    this.lastReportedSamples=this.mpxSamples;
+    this.send({
+      type:'status', locked:this.isLocked(), groups:this.groups, errors:this.crcErrors,
+      fields:this.station.snapshot(this.profile,this.mpxSamples/MPX_RATE),
+      diagnostics:{
+        profile:this.profile, validBlocks:4*this.groups, crcErrors:this.crcErrors,
+        pilotHz:PILOT_FREQUENCY+this.pilotOffset, pilotAmplitude:this.pilotAmp,
+        timingPhase:this.selected?.id??null, groupCounts:{...this.groupCounts},
+        mpxSamples:this.mpxSamples, gapSamples:this.gapSamples
+      }
+    });
+  }
+
+  group(phase,baseIndex,a,b,c,d) {
+    // Timing hypotheses can place the end of the same CRC-valid group
+    // about one bit apart. Distinct groups are always 104 bits apart.
+    if (baseIndex-this.groupSample < NOMINAL_BIT_PERIOD*2) {
+      if (this.selected && phase.energy>this.selected.energy) {
+        this.selected=phase;
+        phase.lockBit=phase.bit;
+      }
+      return;
+    }
+    const wasLocked=this.isLocked();
+    this.groupSample=baseIndex;
+    this.lastGroupAt=this.mpxSamples;
+    this.selected=phase;
+    phase.lockBit=phase.bit;
+    this.groups++;
+    const label=`${b>>>12}${b&0x800?'B':'A'}`;
+    this.groupCounts[label]=(this.groupCounts[label]??0)+1;
+    this.station.apply(a,b,c,d);
+    if (!wasLocked) this.status(true);
+  }
+
+  countdownFragment(baseIndex,a,b,d) {
+    if (baseIndex-this.countdownGroupSample<NOMINAL_BIT_PERIOD*2 ||
+        this.station.fields.pi!==hex(a,4)) return;
+    this.countdownGroupSample=baseIndex;
+    this.station.countdown.add(b,d,this.mpxSamples/MPX_RATE);
+  }
+
+  pilot(x) {
+    const k=this.pilotAlpha;
+    this.pilotI+=k*(x*this.sin-this.pilotI);
+    this.pilotQ+=k*(x*this.cos-this.pilotQ);
+    this.pilotI2+=k*(this.pilotI-this.pilotI2);
+    this.pilotQ2+=k*(this.pilotQ-this.pilotQ2);
+    if (++this.pilotTick<MPX_RATE/1000) return;
+    this.pilotTick=0;
+    this.pilotAmp=2*Math.hypot(this.pilotI2,this.pilotQ2);
+    if (this.pilotAmp>.018) {
+      const error=Math.atan2(this.pilotQ2,this.pilotI2);
+      this.pilotOffset=Math.max(-150,Math.min(150,this.pilotOffset+.55*error));
+      this.updateOscillator();
+      const s=Math.sin(.12*error), c=Math.cos(.12*error);
+      const oldSin=this.sin, i=this.pilotI, i2=this.pilotI2;
+      this.sin=oldSin*c+this.cos*s;
+      this.cos=this.cos*c-oldSin*s;
+      this.pilotI=i*c+this.pilotQ*s;
+      this.pilotQ=this.pilotQ*c-i*s;
+      this.pilotI2=i2*c+this.pilotQ2*s;
+      this.pilotQ2=this.pilotQ2*c-i2*s;
+    }
+    const norm=Math.hypot(this.sin,this.cos);
+    this.sin/=norm;
+    this.cos/=norm;
+  }
+
+  process(x, valid) {
+    if (valid) this.pilot(x);
+    const sin=this.sin, cos=this.cos;
+    const carrierI=(4*cos*cos-3)*cos;
+    const carrierQ=(4*sin*sin-3)*sin;
+    const i=x*carrierI, q=x*carrierQ;
+    const pos=this.firPos;
+    this.firI[pos]=this.firI[pos+FILTER_LENGTH]=i;
+    this.firQ[pos]=this.firQ[pos+FILTER_LENGTH]=q;
+    if (++this.firPos===FILTER_LENGTH) this.firPos=0;
+    this.sin=sin*this.stepCos+cos*this.stepSin;
+    this.cos=cos*this.stepCos-sin*this.stepSin;
+    this.mpxSamples++;
+    if (++this.decPhase!==DECIMATION) return;
+    this.decPhase=0;
+
+    let di=0,dq=0;
+    let right=pos+FILTER_LENGTH;
+    let left=right-(FILTER_LENGTH-1);
+    const middle=FILTER_LENGTH>>1;
+    for (let tap=0; tap<middle; tap++) {
+      const coeff=lowPass[tap];
+      di+=coeff*(this.firI[left]+this.firI[right]);
+      dq+=coeff*(this.firQ[left]+this.firQ[right]);
+      left++;
+      right--;
+    }
+    di+=lowPass[middle]*this.firI[left];
+    dq+=lowPass[middle]*this.firQ[left];
+    this.matched(di,dq);
+  }
+
+  matched(i,q) {
+    const pos=this.matchPos;
+    this.matchI[pos]=this.matchI[pos+MATCH_LENGTH]=i;
+    this.matchQ[pos]=this.matchQ[pos+MATCH_LENGTH]=q;
+    if (++this.matchPos===MATCH_LENGTH) this.matchPos=0;
+    const first=pos+1;
+    let mi=0,mq=0;
+    for (let tap=0; tap<MATCH_LENGTH; tap++) {
+      mi+=matchTaps[tap]*this.matchI[first+tap];
+      mq+=matchTaps[tap]*this.matchQ[first+tap];
+    }
+    const baseIndex=++this.baseIndex;
+    for (const phase of this.phases) {
+      if (phase.next>baseIndex) continue;
+      const fraction=Math.max(0,Math.min(1,phase.next-baseIndex+1));
+      const interpolatedI=this.previousMatchI+(mi-this.previousMatchI)*fraction;
+      const interpolatedQ=this.previousMatchQ+(mq-this.previousMatchQ)*fraction;
+      phase.sample(interpolatedI,interpolatedQ,phase.next,this);
+      phase.next+=this.period;
+    }
+    this.previousMatchI=mi;
+    this.previousMatchQ=mq;
+  }
+
+  advanceGap(count) {
+    if (!count) return;
+    this.gapSamples+=count;
+    if (count>=MPX_RATE/1187.5) {
+      this.station.psParts.clear();
+      this.station.pendingDI=[];
+      this.station.longPsParts.clear();
+    }
+    if (count>MPX_RATE*.050) {
+      this.mpxSamples+=count;
+      this.station.clearParts();
+      this.resetSignal();
+    } else {
+      for (let i=0;i<count;i++) this.process(0,false);
+    }
+  }
+
+  sync(index) {
+    if (!Number.isSafeInteger(index) || index<0) throw new Error('Index MPX RDS invalide.');
+    if (this.expected===null) this.expected=index;
+    if (index>this.expected) {
+      this.advanceGap(index-this.expected);
+      this.expected=index;
+    }
+    return Math.max(0,this.expected-index);
+  }
+
+  gap(index,count) {
+    if (!Number.isSafeInteger(count) || count<0) throw new Error('Taille de perte RDS invalide.');
+    const skip=this.sync(index);
+    if (skip<count) {
+      this.advanceGap(count-skip);
+      this.expected=index+count;
+    }
+    this.status();
+  }
+
+  samples(index,samples) {
+    const isInt=samples instanceof Int8Array;
+    if (!isInt && !(samples instanceof Float32Array)) throw new Error('Trame RDS invalide.');
+    let n=this.sync(index);
+    for (;n<samples.length;n++) {
+      const sample=samples[n];
+      if (isInt ? sample===-128 : !Number.isFinite(sample)) {
+        let end=n+1;
+        while (end<samples.length && (isInt ? samples[end]===-128 : !Number.isFinite(samples[end]))) end++;
+        this.advanceGap(end-n);
+        n=end-1;
+      } else {
+        this.process(isInt ? sample/128 : sample,true);
+      }
+    }
+    this.expected=Math.max(this.expected,index+samples.length);
+    this.status();
+  }
+
+  handle(data) {
+    switch (data.type) {
+      case 'reset':
+        if (data.sampleRate!=null && data.sampleRate!==MPX_RATE) throw new Error('Le RDS exige un MPX à 120 kéch/s.');
+        this.reset(data.profile);
+        this.status(true);
+        break;
+      case 'profile':
+        this.profile=String(data.profile).toUpperCase()==='RDS'?'RDS':'RBDS';
+        this.status(true);
+        break;
+      case 'samples':
+      case 'mpx':
+        try {
+          this.samples(data.index??data.startIndex,data.samples);
+        } finally {
+          this.send({type:'ack'});
+        }
+        break;
+      case 'gap':
+        this.gap(data.index??data.startIndex,data.count);
+        break;
+    }
+  }
+}
+
+const receiver=new RdsReceiver(message=>self.postMessage(message));
+self.onmessage=({data})=>{
+  try {
+    receiver.handle(data);
+  } catch(error) {
+    self.postMessage({type:'error',message:error instanceof Error ? error.message : String(error)});
+  }
+};
+
+/* FMS_RDS_WORKER_END */
+</script>
+<script>
+'use strict';
+(() => {
+  const AUDIO_RATE = 48000;
+  const FRAME_SAMPLES = 128;
+  const FRAME_BYTES = 138;
+  const PROFILES = { HQ:{rate:120000, cutoff:15150}, ROBUST:{rate:96000, cutoff:8300}, MONO:{rate:48000, cutoff:15000} };
+  const crcTable = Uint16Array.from({length:256}, (_,i) => {
+    let crc = i << 8;
+    for (let b=0; b<8; b++) crc = ((crc << 1) ^ (crc & 0x8000 ? 0x1021 : 0)) & 0xffff;
+    return crc;
+  });
+  function crc16(bytes, start=0, end=bytes.length) {
+    let crc = 0xffff;
+    for (let i=start; i<end; i++) crc = ((crc << 8) ^ crcTable[((crc >> 8) ^ bytes[i]) & 255]) & 0xffff;
+    return crc;
+  }
+  class FrameParser {
+    constructor({onFrame=()=>{}, onLine=()=>{}, onError=()=>{}}={}) {
+      Object.assign(this, {onFrame, onLine, onError});
+      this.tail = new Uint8Array(0);
+      this.line = '';
+    }
+    ascii(byte) {
+      if (byte === 10) {
+        const text=this.line.trim();
+        if (/^(?:OK|ERR|END)(?:\s|$)/.test(text)) this.onLine(text);
+        this.line = '';
+      } else if (byte >= 32 && byte <= 126) {
+        this.line = (this.line + String.fromCharCode(byte)).slice(-240);
+      } else if (byte !== 13) this.line = '';
+    }
+    feed(bytes) {
+      const b = new Uint8Array(this.tail.length + bytes.length);
+      b.set(this.tail); b.set(bytes, this.tail.length);
+      let i=0;
+      while (i<b.length) {
+        if (b[i] !== 77) { this.ascii(b[i++]); continue; }
+        if (b.length-i<4) break;
+        if (b[i+1]!==80 || b[i+2]!==88 || b[i+3]!==49) { this.ascii(b[i++]); continue; }
+        if (b.length-i<FRAME_BYTES) break;
+        if (crc16(b,i+4,i+136) !== (b[i+136] | b[i+137]<<8)) {
+          this.onError('crc'); this.line=''; i++; continue;
+        }
+        const index = (b[i+4] | b[i+5]<<8 | b[i+6]<<16 | b[i+7]<<24) >>> 0;
+        this.line = '';
+        this.onFrame(index, new Int8Array(b.buffer,i+8,FRAME_SAMPLES));
+        i += FRAME_BYTES;
+      }
+      this.tail = b.slice(i);
+    }
+  }
+  function lowpass(length, cutoff, rate, fraction) {
+    const taps = new Float64Array(length);
+    const mid = (length-1)/2;
+    let sum = 0;
+    for (let k=0; k<length; k++) {
+      const x = k-mid-fraction;
+      const sinc = x===0 ? 2*cutoff/rate : Math.sin(2*Math.PI*cutoff*x/rate)/(Math.PI*x);
+      const theta=2*Math.PI*k/(length-1);
+      taps[k] = sinc*(.42-.5*Math.cos(theta)+.08*Math.cos(2*theta));
+      sum += taps[k];
+    }
+    for (let k=0; k<length; k++) taps[k]/=sum;
+    return taps;
+  }
+  class StereoDecoder {
+    constructor({mode='HQ',sampleRate=PROFILES[mode]?.rate,deemphasis=75,onMpx=null,onGap=null}={}) {
+      const profile=PROFILES[mode];
+      if (!profile || sampleRate!==profile.rate) throw new Error('Cadence MPX incompatible.');
+      Object.assign(this,{mode,sampleRate,onMpx,onGap});
+      this.setDeemphasis(deemphasis);
+      this.length=mode==='HQ'?121:mode==='ROBUST'?101:63;
+      this.taps=[lowpass(this.length,profile.cutoff,sampleRate,0),lowpass(this.length,profile.cutoff,sampleRate,.5)];
+      this.sum=new Float64Array(this.length*2);
+      this.diff=new Float64Array(this.length*2);
+      this.pos=0; this.resamplePhase=0;
+      this.sin=0; this.cos=1; this.offset=0;
+      this.setOscillator();
+      this.pilotAlpha=1-Math.exp(-2*Math.PI*250/sampleRate);
+      this.dcAlpha=1-Math.exp(-2*Math.PI*20/sampleRate);
+      this.pi=this.pq=this.pi2=this.pq2=this.dc=0;
+      this.pilotAmp=0; this.good=0; this.bad=0; this.tick=0;
+      this.locked=false; this.blend=0; this.outLeft=0; this.outRight=0;
+      this.lastLeft=0; this.lastRight=0; this.pending=0;
+      this.sampleIndex=0; this.shortGap=0; this.longGap=false; this.fadeIn=0;
+    }
+    setDeemphasis(us) {
+      this.deemph=us>0 ? 1-Math.exp(-1/(AUDIO_RATE*us*1e-6)) : 1;
+    }
+    setOscillator() {
+      const w=2*Math.PI*(19000+this.offset)/this.sampleRate;
+      this.stepSin=Math.sin(w); this.stepCos=Math.cos(w);
+    }
+    rotate(s,c) {
+      const a=this.sin*c+this.cos*s;
+      this.cos=this.cos*c-this.sin*s;
+      this.sin=a;
+    }
+    track(x) {
+      const k=this.pilotAlpha;
+      this.pi+=k*(x*this.sin-this.pi); this.pq+=k*(x*this.cos-this.pq);
+      this.pi2+=k*(this.pi-this.pi2); this.pq2+=k*(this.pq-this.pq2);
+      if (++this.tick < this.sampleRate/1000) return;
+      this.tick=0;
+      this.pilotAmp=2*Math.hypot(this.pi2,this.pq2);
+      const error=Math.atan2(this.pq2,this.pi2);
+      if (this.pilotAmp>.025) {
+        this.offset=Math.max(-150,Math.min(150,this.offset+.55*error));
+        this.setOscillator();
+        this.rotate(Math.sin(.12*error),Math.cos(.12*error));
+        // The low-pass states follow the reference rotation as well.
+        const c=Math.cos(.12*error),s=Math.sin(.12*error);
+        const a=this.pi*c+this.pq*s, b=this.pi2*c+this.pq2*s;
+        this.pq=this.pq*c-this.pi*s; this.pq2=this.pq2*c-this.pi2*s;
+        this.pi=a; this.pi2=b;
+      }
+      if (this.pilotAmp>.025 && Math.abs(error)<.48) {
+        this.bad=0;
+        if (++this.good>=50) this.locked=true;
+      } else {
+        this.good=0;
+        if (++this.bad>=30) this.locked=false;
+      }
+      const norm=Math.hypot(this.sin,this.cos);
+      this.sin/=norm; this.cos/=norm;
+    }
+    input(x, good) {
+      const stereo=this.mode!=='MONO';
+      if (good) {
+        this.dc+=this.dcAlpha*(x-this.dc);
+        x-=this.dc;
+        if (stereo) this.track(x);
+        if (this.onMpx) this.onMpx(x,this.sampleIndex);
+      }
+      const difference=stereo ? 4*x*this.sin*this.cos : 0;
+      if (stereo) this.rotate(this.stepSin,this.stepCos);
+      this.sampleIndex++;
+      const pos=this.pos, end=pos+this.length;
+      this.sum[pos]=this.sum[end]=x;
+      this.diff[pos]=this.diff[end]=difference;
+      if (++this.pos===this.length) this.pos=0;
+      this.resamplePhase+=AUDIO_RATE;
+      if (this.resamplePhase<this.sampleRate) return false;
+      this.resamplePhase-=this.sampleRate;
+      if (!good) return true;
+      const taps=this.taps[this.resamplePhase===0 ? 0 : 1];
+      let m=0,d=0;
+      for (let k=0; k<this.length; k++) { m+=taps[k]*this.sum[end-k]; d+=taps[k]*this.diff[end-k]; }
+      this.blend+=((this.locked ? 1 : 0)-this.blend)*.0011;
+      d*=this.blend;
+      this.outLeft+=this.deemph*(m+d-this.outLeft);
+      this.outRight+=this.deemph*(m-d-this.outRight);
+      return true;
+    }
+    gap(samples) {
+      if (!Number.isInteger(samples) || samples<=0) return;
+      if (!this.pending) { this.lastLeft=this.outLeft; this.lastRight=this.outRight; }
+      if (samples<=this.sampleRate*.006 && !this.longGap) {
+        for (let n=0; n<samples; n++) {
+          if (this.input(this.locked ? this.pilotAmp*this.sin : 0,false)) this.pending++;
+        }
+        this.shortGap+=samples;
+        if (this.shortGap>this.sampleRate*.006) this.longGap=true;
+      } else {
+        const position=this.resamplePhase+samples*AUDIO_RATE;
+        this.pending+=Math.floor(position/this.sampleRate);
+        this.resamplePhase=position%this.sampleRate;
+        this.sampleIndex+=samples;
+        const w=2*Math.PI*(19000+this.offset)*samples/this.sampleRate;
+        this.rotate(Math.sin(w),Math.cos(w));
+        this.sum.fill(0); this.diff.fill(0);
+        this.outLeft=this.outRight=0;
+        this.longGap=true;
+        if (samples>=this.sampleRate*.050) {
+          this.locked=false; this.good=this.bad=this.tick=0;
+          this.pi=this.pq=this.pi2=this.pq2=0;
+        }
+      }
+    }
+    conceal(pcm, start, targetL, targetR) {
+      for (let i=0; i<this.pending; i++) {
+        if (this.longGap) {
+          const down=Math.max(0,1-(i+1)/144), up=Math.max(0,1-(this.pending-i)/144);
+          pcm[start+2*i]=this.lastLeft*down+targetL*up;
+          pcm[start+2*i+1]=this.lastRight*down+targetR*up;
+        } else {
+          const u=(i+1)/(this.pending+1);
+          pcm[start+2*i]=this.lastLeft+(targetL-this.lastLeft)*u;
+          pcm[start+2*i+1]=this.lastRight+(targetR-this.lastRight)*u;
+        }
+      }
+      const end=start+2*this.pending;
+      this.pending=this.shortGap=0; this.longGap=false;
+      return end;
+    }
+    process(samples, erasures=false) {
+      const pcm=new Float32Array(2*(this.pending+Math.ceil(samples.length*AUDIO_RATE/this.sampleRate)));
+      let p=0;
+      for (let n=0; n<samples.length; n++) {
+        if (erasures && samples[n]===-128) {
+          let end=n+1;
+          while (end<samples.length && samples[end]===-128) end++;
+          if (this.onGap) this.onGap(this.sampleIndex,end-n);
+          this.gap(end-n); n=end-1;
+          if (this.pending>=960) {
+            p=this.conceal(pcm,p,0,0);
+            this.fadeIn=144;
+          }
+          continue;
+        }
+        if (!this.input(samples[n]/128,true)) {
+          if (!this.pending) { this.shortGap=0; this.longGap=false; }
+          continue;
+        }
+        if (this.pending) {
+          p=this.conceal(pcm,p,this.outLeft,this.outRight);
+          this.fadeIn=0;
+        } else { this.shortGap=0; this.longGap=false; }
+        const gain=this.fadeIn ? 1-(--this.fadeIn)/144 : 1;
+        pcm[p++]=this.outLeft*gain; pcm[p++]=this.outRight*gain;
+      }
+      return pcm.subarray(0,p);
+    }
+    stats() { return {pilotAmp:this.pilotAmp, pilotHz:19000+this.offset, locked:this.locked, stereo:this.blend>.5}; }
+  }
+
+  const workletSource = String.raw`
+    class MPXPlayer extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.capacity=131072; this.mask=this.capacity-1;
+        this.ring=new Float32Array(this.capacity*2);
+        this.readAt=0; this.writeAt=0; this.live=true; this.running=false; this.done=false;
+        this.underruns=0; this.discarded=0; this.pulse=0; this.gain=0; this.correction=0;
+        this.port.onmessage=({data})=>{
+          if (data.type==='reset') {
+            this.readAt=this.writeAt=0; this.running=this.done=false; this.live=data.live;
+            this.underruns=this.discarded=this.pulse=0; this.gain=this.correction=0;
+          } else if (data.type==='end') this.done=true;
+          else if (data.type==='pcm') {
+            for (let j=0; j<data.values.length; j+=2) {
+              if (this.writeAt-Math.floor(this.readAt)>=this.capacity) {
+                this.readAt=Math.floor(this.readAt)+1; this.discarded++;
+              }
+              const i=(this.writeAt++&this.mask)*2;
+              this.ring[i]=data.values[j]; this.ring[i+1]=data.values[j+1];
+            }
+          }
+        };
+      }
+      process(inputs,outputs) {
+        const out=outputs[0];
+        const queued=this.writeAt-this.readAt;
+        if (!this.running && (queued>=3120 || (this.done && queued>1))) this.running=true;
+        const correction=this.live ? Math.max(-.009,Math.min(.009,(queued-4320)*.000002)) : 0;
+        this.correction+=(correction-this.correction)*.04;
+        const step=48000/sampleRate*(1+this.correction);
+        for (let i=0;i<out[0].length;i++) {
+          const j=Math.floor(this.readAt), d=this.readAt-j;
+          if (this.running && j+1<this.writeAt) {
+            this.gain=Math.min(1,this.gain+.003);
+            for (let c=0;c<2;c++) {
+              const x=this.ring[(j&this.mask)*2+c],y=this.ring[((j+1)&this.mask)*2+c];
+              out[c][i]=Math.max(-1,Math.min(1,(x+(y-x)*d)*this.gain));
+            }
+            this.readAt+=step;
+          } else {
+            if (this.running && !this.done) this.underruns++;
+            if (this.done && this.running) this.port.postMessage({type:'ended'});
+            this.running=false; this.gain=0;
+          }
+        }
+        if (++this.pulse%75===0) this.port.postMessage({type:'stats',ms:(this.writeAt-this.readAt)/48,underruns:this.underruns,discarded:this.discarded});
+        return true;
+      }
+    }
+    registerProcessor('mpx-player',MPXPlayer);
+  `;
+  globalThis.FMStereoRX={FrameParser,StereoDecoder,crc16,PROFILES,FRAME_SAMPLES,FRAME_BYTES};
+  if (typeof document==='undefined') return;
+
+  const $=id=>document.getElementById(id);
+  const formatter=new Intl.NumberFormat('fr-CA',{maximumFractionDigits:2});
+  const fmt=value=>formatter.format(value);
+  let port=null,reader=null,serialParser=null,serialTask=null,baud=0,ctx=null,node=null,decoder=null;
+  let state='idle', audioStats={}, chunks=[], chunkLength=0, expected=0, currentRate=0, token=0;
+  let confirmed=false, acqEnd=-1, acqSpan=0;
+  const transportCounts=()=>({frames:0,crc:0,missing:0,gaps:0,maxGap:0,invalid:0,acqGaps:0,maxAcqGap:0,late:0,discarded:0,serialErrors:0});
+  let counters=transportCounts();
+  let rdsTap=null, rdsData=null, rdsSkipped=0, rdsPosition=0, rdsDirty=true;
+  let rdsLabel='En attente du multiplex HQ.', rdsError=false;
+  globalThis.FMStereoRX.uiStats=()=>({state,baud,rate:currentRate,transport:{...counters},audio:{...audioStats},dsp:decoder?.stats(),rds:{...rdsData,active:!!rdsTap,locked:!!rdsTap&&!!rdsData?.locked,skipped:rdsSkipped,status:rdsLabel}});
+  Object.freeze(globalThis.FMStereoRX);
+  const RDS_BATCH=4096, RDS_MAX_INFLIGHT=3;
+  function renderRds() {
+    if (!rdsDirty) return;
+    rdsDirty=false;
+    const s=rdsData||{}, f=s.fields||{}, d=s.diagnostics||{}, di=f.di||{};
+    const put=(id,value)=>{ $(id).textContent=value===undefined||value===null||value===''?'—':String(value); };
+    const hex=(value,digits)=>value===undefined||value===null?'—':(typeof value==='number'?value.toString(16):String(value).replace(/^0x/i,'')).toUpperCase().padStart(digits,'0');
+    const yesNo=value=>value===true||value===1?'Oui':value===false||value===0?'Non':'—';
+    const ab=value=>value===0||value===false?'A':value===1||value===true?'B':value;
+    $('rdsStatus').textContent=rdsLabel;
+    $('rdsStatus').classList.toggle('locked',!!rdsTap&&!!s.locked);
+    $('rdsStatus').classList.toggle('error',rdsError);
+    const countdown=f.countdown;
+    put('rdsPi',hex(f.pi,4));
+    put('rdsPs',countdown?.estimated ? '≈ '+countdown.text : countdown ? countdown.text : f.ps);
+    put('rdsPtyn',f.ptyn);
+    put('rdsPty',f.pty!=null&&f.ptyLabel?`${f.pty} · ${f.ptyLabel}`:f.pty);
+    put('rdsRadioText',f.radioText); put('rdsRadioTextMode',f.radioTextMode);
+    put('rdsRadioTextAB',ab(f.radioTextAB)); put('rdsPtynAB',ab(f.ptynAB));
+    put('rdsMusic',f.music===true||f.music===1?'Musique':f.music===false||f.music===0?'Parole':'—');
+    put('rdsTp',yesNo(f.tp)); put('rdsTa',yesNo(f.ta));
+    put('rdsDiStereo',yesNo(di.stereo)); put('rdsDiHead',yesNo(di.artificialHead));
+    put('rdsDiCompressed',yesNo(di.compressed)); put('rdsDiDynamic',yesNo(di.dynamicPty));
+    put('rdsLongPs',f.longPs); put('rdsEcc',hex(f.ecc,2));
+    put('rdsGroups',fmt(s.groups||0)); put('rdsBlocks',fmt(d.validBlocks||0));
+    put('rdsErrors',fmt(d.crcErrors??s.errors??0));
+    put('rdsPilot',Number.isFinite(d.pilotHz)?fmt(d.pilotHz)+' Hz':null);
+    put('rdsSkipped',fmt(rdsSkipped));
+    put('rdsPiCountry',f.countryCode); put('rdsPiCoverage',f.programCoverage); put('rdsPiReference',f.referenceNumber);
+    put('rdsGroupTypes',Object.entries(d.groupCounts||{}).sort().map(([name,count])=>`${name} · ${fmt(count)}`).join('  /  '));
+  }
+  function stopRds(label='RDS arrêté.',clear=false,error=false) {
+    if (rdsTap) {
+      rdsTap.worker.terminate(); URL.revokeObjectURL(rdsTap.url);
+      rdsTap=null;
+    }
+    if (clear) { rdsData=null; rdsSkipped=0; }
+    rdsLabel=label; rdsError=error; rdsDirty=true;
+  }
+  function startRds(rate) {
+    if (rate!==120000) { stopRds('RDS indisponible à cette cadence. Choisis HQ à 120 kHz.',true); return; }
+    if (!$('rdsEnabled').checked) { stopRds('Décodage RDS désactivé.',true); return; }
+    stopRds('Recherche de groupes RDS à 57 kHz…',true);
+    const source=$('rdsWorkerSource').textContent.trim();
+    if (!source) { stopRds('Module RDS indisponible.',true,true); return; }
+    let url;
+    try {
+      url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
+      const worker=new Worker(url);
+      const tap={worker,url,inflight:0,index:0,count:0,bytes:new Int8Array(RDS_BATCH),gapStart:0,gapCount:0};
+      rdsTap=tap;
+      worker.onmessage=({data})=>{
+        if (rdsTap!==tap) return;
+        if (data?.type==='ack') { tap.inflight=Math.max(0,tap.inflight-1); return; }
+        if (data?.type==='error') { stopRds('Erreur du décodeur RDS · '+data.message,false,true); return; }
+        if (data?.type==='status') {
+          if (data.error) { stopRds('Erreur du décodeur RDS · '+data.error,false,true); return; }
+          rdsData=data;
+          rdsLabel=data.locked?'RDS verrouillé · groupes vérifiés.':'Recherche de groupes RDS à 57 kHz…';
+          rdsDirty=true;
+        }
+      };
+      worker.onerror=()=>{ if (rdsTap===tap) stopRds('Le décodeur RDS s’est interrompu.',false,true); };
+      worker.postMessage({type:'reset',sampleRate:rate,profile:$('rdsProfile').value});
+    } catch (_) {
+      if (url&&!rdsTap) URL.revokeObjectURL(url);
+      stopRds('Le décodeur RDS n’a pas démarré.',false,true);
+    }
+  }
+  function markRdsGap(tap,index,count) {
+    if (!count) return;
+    if (!tap.gapCount) tap.gapStart=index;
+    tap.gapCount=index+count-tap.gapStart;
+  }
+  function flushRds() {
+    const tap=rdsTap;
+    if (!tap?.count) return;
+    if (tap.inflight>=RDS_MAX_INFLIGHT) {
+      markRdsGap(tap,tap.index,tap.count);
+      rdsSkipped+=tap.count; rdsDirty=true; tap.count=0;
+      if (rdsData?.locked) rdsData={...rdsData,locked:false};
+      rdsLabel='RDS en retard · des échantillons ont été ignorés.';
+      return;
+    }
+    try {
+      if (tap.gapCount) {
+        tap.worker.postMessage({type:'gap',index:tap.gapStart,count:tap.gapCount});
+        tap.gapCount=0;
+      }
+      const samples=tap.bytes.subarray(0,tap.count);
+      tap.worker.postMessage({type:'samples',index:tap.index,samples},[samples.buffer]);
+      tap.inflight++; tap.count=0; tap.bytes=new Int8Array(RDS_BATCH);
+    } catch (_) { stopRds('Le décodeur RDS s’est interrompu.',false,true); }
+  }
+  function rdsGap(index,count) {
+    if (!rdsTap) return;
+    flushRds();
+    if (rdsTap) markRdsGap(rdsTap,index,count);
+  }
+  function tapRds(index,samples,live) {
+    let offset=0;
+    while (offset<samples.length&&rdsTap) {
+      const tap=rdsTap;
+      if (!tap.count) tap.index=index+offset;
+      const count=Math.min(samples.length-offset,RDS_BATCH-tap.count);
+      if (live) tap.bytes.set(samples.subarray(offset,offset+count),tap.count);
+      else for(let i=0;i<count;i++) {
+        const value=samples[offset+i];
+        tap.bytes[tap.count+i]=value===-128?-127:value;
+      }
+      tap.count+=count; offset+=count;
+      if (tap.count===RDS_BATCH) flushRds();
+    }
+  }
+  function message(text,error=false) { $('status').textContent=text; $('status').classList.toggle('error',error); }
+  function buttons() {
+    $('connect').disabled=!!port||state!=='idle';
+    $('start').disabled=!port||state!=='idle';
+    $('stop').disabled=!['starting','radio'].includes(state);
+    $('close').disabled=!port||['file','connecting','closing'].includes(state);
+    $('playFile').disabled=state!=='idle'||!$('file').files.length;
+    $('stopFile').disabled=state!=='file';
+    for (const id of ['preset','frequency','mode','file','fileRate']) $(id).disabled=state!=='idle';
+  }
+  async function readyAudio(live) {
+    if (!ctx) ctx=new AudioContext({latencyHint:'interactive'});
+    await ctx.resume();
+    if (!node) {
+      if (!ctx.audioWorklet) throw new Error('AudioWorklet est indisponible. Ouvre ce fichier dans Chrome ou Edge.');
+      const url='data:text/javascript;charset=utf-8,'+encodeURIComponent(workletSource);
+      await ctx.audioWorklet.addModule(url);
+      node=new AudioWorkletNode(ctx,'mpx-player',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2]});
+      node.port.onmessage=({data})=>{
+        if (data.type==='stats') audioStats=data;
+        if (data.type==='ended' && state==='file') stopFile('Lecture terminée.');
+      };
+      node.connect(ctx.destination);
+    }
+    audioStats={}; chunks=[]; chunkLength=0;
+    node.port.postMessage({type:'reset',live});
+  }
+  function silence() {
+    chunks=[]; chunkLength=0;
+    if (node) node.port.postMessage({type:'reset',live:true});
+  }
+  function flush() {
+    if (!chunkLength) return;
+    const pcm=new Float32Array(chunkLength);
+    let at=0;
+    for (const chunk of chunks) { pcm.set(chunk,at); at+=chunk.length; }
+    chunks=[]; chunkLength=0;
+    node.port.postMessage({type:'pcm',values:pcm},[pcm.buffer]);
+  }
+  function play(pcm) {
+    if (!pcm.length) return;
+    chunks.push(pcm); chunkLength+=pcm.length;
+    if (chunkLength>=960) flush();
+  }
+  function configure(mode,rate) {
+    acqEnd=-1; acqSpan=0;
+    decoder=new StereoDecoder({mode,sampleRate:rate,deemphasis:Number($('deemphasis').value),onGap:(index,count)=>{
+      if (index!==acqEnd) { counters.acqGaps++; acqSpan=0; }
+      acqEnd=index+count; acqSpan+=count; counters.invalid+=count;
+      counters.maxAcqGap=Math.max(counters.maxAcqGap,acqSpan);
+    }});
+    currentRate=rate;
+    $('mpxRate').textContent=fmt(rate/1000)+' kHz · '+mode;
+  }
+  function frame(index,payload) {
+    if (state!=='radio') return;
+    const gap=(index-expected)>>>0;
+    if (gap>=0x80000000) { counters.late++; return; }
+    if (gap) {
+      counters.missing+=gap; counters.gaps++; counters.maxGap=Math.max(gap,counters.maxGap);
+      if (gap>currentRate*.25) {
+        counters.discarded+=Math.floor(gap*AUDIO_RATE/currentRate);
+        silence(); configure(decoder.mode,currentRate);
+      } else decoder.gap(gap);
+    }
+    expected=(index+FRAME_SAMPLES)>>>0;
+    counters.frames++;
+    play(decoder.process(payload,true));
+    if (gap) { rdsGap(rdsPosition,gap); rdsPosition+=gap; }
+    if (rdsTap) tapRds(rdsPosition,payload,true);
+    rdsPosition+=FRAME_SAMPLES;
+  }
+  function line(text) {
+    const status=text.match(/^OK STATUS FMStereoRX\s+\d+\s+\d+\s+(\d+)\s+\d+$/);
+    if (status && Number(status[1])===baud) confirmed=true;
+    const ok=text.match(/^OK START\s+(\d+)\s+(\d+)\s+(HQ|ROBUST|MONO)\s*$/i);
+    if (ok && state==='starting') {
+      const mode=ok[3].toUpperCase();
+      try { configure(mode,Number(ok[2])); }
+      catch(error) { void stopRadio(error.message,true); return; }
+      expected=0; rdsPosition=0;
+      $('actual').textContent=new Intl.NumberFormat('fr-CA',{minimumFractionDigits:3,maximumFractionDigits:6}).format(Number(ok[1])/1e6)+' MHz';
+      state='radio'; buttons(); message('Réception active · '+fmt(baud/1e6)+' Mbaud, 8N2.');
+      startRds(currentRate);
+    }
+    if (/^END(?:\s|$)/.test(text) && ['radio','stopping'].includes(state)) {
+      state='idle'; silence(); buttons(); message('Réception arrêtée.');
+      if (rdsTap) stopRds();
+    }
+    if (/^ERR(?:\s|$)/.test(text) && state==='starting') {
+      state='idle'; silence(); buttons(); message(text,true);
+    }
+    $('deviceMessage').textContent=text;
+  }
+  async function command(text) {
+    if (!port?.writable) throw new Error('Port série indisponible.');
+    const writer=port.writable.getWriter();
+    try { await writer.write(new TextEncoder().encode(text)); } finally { writer.releaseLock(); }
+  }
+  async function readSerial(own) {
+    try {
+      let ended=false;
+      while (port===own && own.readable && !ended) {
+        const local=own.readable.getReader(); reader=local;
+        try {
+          while (port===own) {
+            const {value,done}=await local.read();
+            if (done) { ended=true; break; }
+            if (value?.length) serialParser.feed(value);
+          }
+        } catch(error) {
+          if (port===own) {
+            counters.serialErrors++;
+            if (!own.readable) throw error;
+          }
+        } finally {
+          local.releaseLock();
+          if (reader===local) reader=null;
+        }
+      }
+    } catch(error) { if (port===own) message('Port série interrompu · '+error.message,true); }
+    finally {
+      if (port===own) {
+        port=null; baud=0; confirmed=false;
+        if (state!=='connecting') {
+          state='idle'; silence(); buttons();
+          if (rdsTap) stopRds();
+        }
+        try { await own.close(); } catch (_) {}
+      }
+    }
+  }
+  async function disconnectSerial() {
+    const old=port, task=serialTask;
+    port=null; baud=0; confirmed=false; serialTask=null;
+    if (reader) { try { await reader.cancel(); } catch (_) {} }
+    if (task) await task;
+    if (old) await old.close();
+  }
+  async function probe(choice,speed) {
+    await choice.open({baudRate:speed,dataBits:8,stopBits:2,parity:'none',flowControl:'none',bufferSize:65536});
+    port=choice; baud=speed; confirmed=false;
+    serialParser=new FrameParser({onFrame:frame,onLine:line,onError:()=>{ if (state==='radio') counters.crc++; }});
+    serialTask=readSerial(choice);
+    const label=fmt(speed/1e6)+' Mbaud';
+    const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+    message('Vérification de la carte RX à '+label+'…');
+    await wait(650);
+    for (let attempt=0; attempt<2&&port===choice&&!confirmed; attempt++) {
+      await command('STATUS\n');
+      await wait(250);
+    }
+    if (port===choice && !confirmed) {
+      message('Réinitialisation de la carte RX · '+label+'…');
+      try {
+        await choice.setSignals({dataTerminalReady:false,requestToSend:true});
+        await wait(120);
+        if (port===choice) await choice.setSignals({dataTerminalReady:false,requestToSend:false});
+        await wait(850);
+        if (port===choice) { await command('STATUS\n'); await wait(300); }
+      } catch (_) {}
+    }
+    return port===choice && confirmed;
+  }
+  async function connect() {
+    if (!navigator.serial) { message('Web Serial est indisponible. Utilise Chrome ou Edge sur un ordinateur.',true); return; }
+    state='connecting'; confirmed=false; buttons();
+    try {
+      const choice=await navigator.serial.requestPort();
+      let lastError;
+      for (const speed of [1500000,2000000]) {
+        try {
+          if (await probe(choice,speed)) {
+            message('FMStereoRX prêt · '+fmt(baud/1e6)+' Mbaud, 8N2.');
+            return;
+          }
+        } catch(error) { lastError=error; }
+        await disconnectSerial();
+      }
+      message(lastError?'Connexion impossible · '+lastError.message:'Aucune réponse STATUS à 1,5 ou 2 Mbaud. Vérifie le port et le firmware RX.',true);
+    } catch(error) {
+      message(error.name==='NotFoundError'?'Aucun port sélectionné.':'Connexion impossible · '+error.message,error.name!=='NotFoundError');
+    } finally { if (state==='connecting') state='idle'; buttons(); }
+  }
+  async function closePort() {
+    if (port && ['starting','radio'].includes(state)) { try { await command('!\n'); } catch (_) {} }
+    state='closing'; silence(); buttons();
+    if (rdsTap) stopRds();
+    try { await disconnectSerial(); message('Port fermé.'); }
+    catch(error) { message('Fermeture incomplète · '+error.message,true); }
+    finally { state='idle'; buttons(); }
+  }
+  async function startRadio() {
+    const mhz=Number($('frequency').value.trim().replace(',','.'));
+    if (!Number.isFinite(mhz)||mhz<2400||mhz>2483.5) { message('Entre une fréquence entre 2400 et 2483,5 MHz.',true); return; }
+    const id=++token;
+    state='starting'; counters=transportCounts(); buttons();
+    message('Accord et démarrage du récepteur…');
+    try {
+      await readyAudio(true);
+      if (state!=='starting'||id!==token) return;
+      await command('START '+Math.round(mhz*1000)+' '+$('mode').value+'\n');
+      setTimeout(()=>{ if (state==='starting'&&id===token) void stopRadio('Aucune réponse START de la carte. Vérifie le port et le firmware RX.',true); },2600);
+    } catch(error) { state='idle'; buttons(); message(error.message,true); }
+  }
+  async function stopRadio(reason='',error=false) {
+    token++;
+    state='stopping'; buttons(); silence();
+    if (rdsTap) stopRds();
+    try { await command('!\n'); } catch(err) { reason=reason||err.message; error=true; }
+    const id=token;
+    setTimeout(()=>{ if (state==='stopping'&&token===id) { state='idle'; buttons(); if (!reason) message('Réception arrêtée.'); } },300);
+    if (reason) message(reason,error);
+  }
+  function stopFile(text) {
+    token++; state='idle'; silence(); buttons(); message(text);
+    if (rdsTap) stopRds();
+  }
+  async function startFile() {
+    const file=$('file').files[0];
+    if (!file) return;
+    if (file.size>40*1024*1024) { message('Le fichier MPX8 dépasse 40 Mo.',true); return; }
+    if (file.size<8) { message('Le fichier MPX8 est trop court.',true); return; }
+    const rate=Number($('fileRate').value), mode=Object.keys(PROFILES).find(k=>PROFILES[k].rate===rate), id=++token;
+    state='file'; counters=transportCounts(); buttons();
+    try {
+      await readyAudio(false);
+      const bytes=new Int8Array(await file.arrayBuffer());
+      if (state!=='file'||id!==token) return;
+      configure(mode,rate); $('actual').textContent='Fichier';
+      message('Lecture · '+file.name);
+      startRds(rate);
+      let read=0;
+      const started=ctx.currentTime;
+      function push() {
+        if (state!=='file'||id!==token) return;
+        const target=Math.min(bytes.length,Math.ceil((ctx.currentTime-started+.105)*rate));
+        while (read<target) {
+          const next=Math.min(target,read+Math.floor(rate/50));
+          const chunk=bytes.subarray(read,next);
+          play(decoder.process(chunk));
+          if (rdsTap) tapRds(read,chunk,false);
+          read=next;
+        }
+        flush();
+        if (read<bytes.length) setTimeout(push,12);
+        else { node.port.postMessage({type:'end'}); flushRds(); }
+      }
+      push();
+    } catch(error) { stopFile('Lecture impossible · '+error.message); }
+  }
+  $('preset').onchange=()=>{ if ($('preset').value!=='manual') $('frequency').value=$('preset').value.replace('.',','); };
+  $('frequency').oninput=()=>{ $('preset').value='manual'; };
+  $('deemphasis').onchange=()=>decoder?.setDeemphasis(Number($('deemphasis').value));
+  $('rdsProfile').onchange=()=>{
+    rdsDirty=true;
+    if (rdsTap) {
+      try { rdsTap.worker.postMessage({type:'profile',profile:$('rdsProfile').value}); }
+      catch (_) { stopRds('Le décodeur RDS s’est interrompu.',false,true); }
+    }
+  };
+  $('rdsEnabled').onchange=()=>{
+    if (!$('rdsEnabled').checked) stopRds('Décodage RDS désactivé.',true);
+    else if (state==='radio'||state==='file') startRds(currentRate);
+    else stopRds('En attente du multiplex HQ.',true);
+  };
+  $('file').onchange=buttons;
+  $('connect').onclick=connect; $('close').onclick=()=>closePort(); $('start').onclick=startRadio; $('stop').onclick=()=>stopRadio();
+  $('playFile').onclick=startFile; $('stopFile').onclick=()=>stopFile('Lecture arrêtée.');
+  setInterval(()=>{
+    if (state==='radio') flush();
+    const s=decoder?.stats();
+    $('pilot').textContent=!s||decoder.mode==='MONO'?'—':s.locked?fmt(s.pilotHz)+' Hz':'Recherche';
+    $('pilotMeter').style.width=(s?Math.min(100,s.pilotAmp*1000):0)+'%';
+    $('stereo').textContent=!s?'—':s.stereo?'Stéréo':'Mono';
+    for (const key of ['frames','crc','missing','invalid','late','serialErrors']) $(key).textContent=fmt(counters[key]);
+    $('gaps').textContent=fmt(counters.gaps)+' · '+fmt(currentRate ? 1000*counters.maxGap/currentRate : 0)+' ms';
+    $('acqGaps').textContent=fmt(counters.acqGaps)+' · '+fmt(currentRate ? 1000*counters.maxAcqGap/currentRate : 0)+' ms';
+    $('buffer').textContent=audioStats.ms===undefined?'—':fmt(Math.max(0,audioStats.ms))+' ms';
+    $('underruns').textContent=fmt(audioStats.underruns||0);
+    $('discarded').textContent=fmt(counters.discarded+(audioStats.discarded||0));
+    renderRds();
+  },150);
+  buttons();
+})();
+</script>
+</html>
