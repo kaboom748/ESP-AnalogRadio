@@ -1,6 +1,7 @@
 # ESP-AnalogRadio
 
 <img width="1024" height="770" alt="92189aef-31ac-4b0d-b6dd-0ef7a945d5f4" src="https://github.com/user-attachments/assets/ebba6e2f-2e76-49cc-b273-e5e3e0eb69e6" />
+<img width="736" height="406" alt="Capture d’écran 2026-11-07 230521" src="https://github.com/user-attachments/assets/e858f5bf-d72d-4f1c-be08-1dc2bbfd6a42" />
 <img width="242" height="253" alt="Capture d’écran 2026-11-07 225722" src="https://github.com/user-attachments/assets/31b59c63-1240-405f-b9bf-f9ac9f0b9df7" />
 <img width="1087" height="1011" alt="Capture d’écran 2026-11-07 145341" src="https://github.com/user-attachments/assets/f1d2ebef-0edf-4123-a1dd-574c613a6238" />
 <img width="1007" height="874" alt="2" src="https://github.com/user-attachments/assets/ccd4b288-7853-4c76-a9a0-d599a4caa745" />
