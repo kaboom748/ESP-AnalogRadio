@@ -1,0 +1,1817 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modem FM · Réception</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui,sans-serif;--panel:#1e2932;--line:#485b68;--dim:#bfccd3;--accent:#95dbcf;--bad:#ffaeae}
+*{box-sizing:border-box}body{margin:0;background:#131a20;color:#f1f5f7}main{max-width:780px;margin:auto;padding:32px 18px}header{border-bottom:1px solid var(--line);padding-bottom:12px}header span{font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}h1{font-size:clamp(2rem,6vw,3rem);line-height:1.12;margin:6px 0 10px}h2{font-size:1.1rem;margin:0 0 8px}p{margin:6px 0}section{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin:14px 0;padding:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}label{display:flex;flex-direction:column;gap:4px}.check{flex-direction:row;align-items:center}label,small,dt{color:var(--dim)}input,select,button{min-width:0;max-width:100%;font:inherit;color:inherit;background:#17232b;border:1px solid #607483;border-radius:7px;padding:7px 10px}input[type=range],input[type=checkbox],progress{accent-color:var(--accent)}button{font-weight:650;cursor:pointer}button.primary,a.download{color:#102a24;background:var(--accent);border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}button:hover:not(:disabled){border-color:var(--accent)}.status{color:var(--accent);min-height:1.5em;overflow-wrap:anywhere}.error{color:var(--bad)}progress{width:100%}dl{margin:10px 0 0}.grid div{min-width:0}.grid dd{margin:2px 0 0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}a.download{display:inline-block;font-weight:700;padding:8px 12px;border-radius:7px;text-decoration:none;overflow-wrap:anywhere}a[hidden]{display:none}code{overflow-wrap:anywhere}details{margin-top:10px}summary{cursor:pointer}
+</style>
+<main>
+  <header><span>ESP8266 · Liaison simplex</span><h1>Modem FM · Réception</h1><p>Choisis le profil de l’émetteur et lance la réception avant son envoi.</p></header>
+  <section aria-labelledby="radioTitle">
+    <h2 id="radioTitle">Carte de réception</h2>
+    <div class="grid">
+      <label>Fréquence RX (MHz)<input id="frequency" value="2442,287" inputmode="decimal" spellcheck="false"></label>
+      <label>Profil de modulation
+        <select id="mode">
+          <option value="v21">V.21 · 300 bit/s</option>
+          <option value="v22">V.22 · 1 200 bit/s</option>
+          <option value="v22bis">V.22bis · 2 400 bit/s</option>
+          <option value="vboom">V.BoOm · 120 kbit/s brut</option>
+        </select>
+      </label>
+    </div>
+    <div class="actions"><button id="connect" type="button">Ouvrir le port RX</button><button id="start" class="primary" type="button" disabled>Recevoir</button><button id="stop" type="button" disabled>Arrêter</button><button id="close" type="button" disabled>Fermer le port</button></div>
+    <p id="status" class="status" role="status">Port fermé.</p>
+    <p><small>Web Serial à 1,5 Mbaud, 8N2 · échantillons FM démodulés à 120 kéch/s en mode HQ.</small></p>
+  </section>
+  <section aria-labelledby="monitorTitle">
+    <h2 id="monitorTitle">Écoute du signal reçu</h2>
+    <div class="grid">
+      <label for="volume">Volume <span id="volumeLabel">25 %</span><input id="volume" type="range" min="0" max="100" step="1" value="25"></label>
+      <label class="check"><input id="mute" type="checkbox"> Couper le son</label>
+    </div>
+    <p><small>Écoute directe de l’audio FM reçu. Le volume et la coupure du son agissent sur l’écoute.</small></p>
+    <p id="monitorStatus" class="status">En attente de réception.</p>
+  </section>
+  <section aria-labelledby="symbolTitle">
+    <h2 id="symbolTitle">Symboles reçus</h2>
+    <div id="symbolMonitor"></div>
+  </section>
+  <section aria-labelledby="fileTitle">
+    <h2 id="fileTitle">Fichier reçu</h2>
+    <p id="fileStatus" class="status" role="status">En attente d’une trame valide.</p>
+    <progress id="progress" max="1" value="0" aria-label="Reconstruction du fichier"></progress>
+    <div class="actions"><a id="download" class="download" hidden>Télécharger</a></div>
+    <dl class="grid">
+      <div><dt>Groupes reconstruits</dt><dd id="generations">—</dd></div>
+      <div><dt>Blocs reconstruits par FEC</dt><dd id="recovered">0</dd></div>
+      <div><dt>Octets du fichier</dt><dd id="fileSize">—</dd></div>
+      <div><dt>FEC détectée</dt><dd id="fec">—</dd></div>
+    </dl>
+    <p id="hashLine" hidden><small>SHA-256 <code id="sha256"></code></small></p>
+  </section>
+  <section aria-labelledby="linkTitle">
+    <h2 id="linkTitle">Diagnostic</h2>
+    <dl class="grid">
+      <div><dt>Centre radio</dt><dd id="actual">—</dd></div>
+      <div><dt>Trames UART valides</dt><dd id="frames">0</dd></div>
+      <div><dt>Erreurs CRC UART</dt><dd id="crc">0</dd></div>
+      <div><dt>Échantillons perdus sur l’UART</dt><dd id="missing">0</dd></div>
+      <div><dt>Échantillons invalides à la capture</dt><dd id="invalid">0</dd></div>
+      <div><dt>Échantillons écartés par le navigateur</dt><dd id="decoderDrops">0</dd></div>
+      <div><dt>Trames modem validées</dt><dd id="modemPackets">0</dd></div>
+      <div><dt>Trames modem rejetées</dt><dd id="modemRejected">—</dd></div>
+    </dl>
+    <details><summary>Dernier message de la carte</summary><code id="deviceMessage">—</code></details>
+  </section>
+  <p><small>Ouvre ce fichier dans Chrome ou Edge sur l’ordinateur relié à la carte RX.</small></p>
+</main>
+<script id="fmFileProtocolSource" type="text/plain">
+/* Simplex file packets: fixed CRC32 frames and systematic Cauchy RS erasure coding. */
+globalThis.FM_FILE_PROTOCOL = (() => {
+  'use strict';
+
+  const SHARD_BYTES = 128;
+  const MAX_DATA_SHARDS = 16;
+  const HEADER_BYTES = 20;
+  const FRAME_BYTES = HEADER_BYTES + SHARD_BYTES + 4;
+  const MAX_FILE_BYTES = 16 * 1024 * 1024;
+  const MAX_NAME_BYTES = 1024;
+  const HASH_BYTES = 32;
+  const GENERATION_BYTES = MAX_DATA_SHARDS * SHARD_BYTES;
+  const INTERLEAVE_GENERATIONS = 4;
+  const DEFAULT_FEC_PERCENT = 100;
+  // Byte 2 remains 0x01 for the original 100% parity format. Version 2
+  // uses its high nibble to select a parity ratio without enlarging frames.
+  const fecCodes = new Map([[25, 0x02], [50, 0x12], [100, 0x01], [200, 0x22], [400, 0x32], [800, 0x42]]);
+  const fecPercents = new Map(Array.from(fecCodes, ([percent, code]) => [code, percent]));
+  const FEC_OPTIONS = Object.freeze(Array.from(fecCodes.keys()));
+
+  const crcTable = Uint32Array.from({length: 256}, (_, index) => {
+    let crc = index;
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    return crc >>> 0;
+  });
+
+  function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (const byte of bytes) crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 255];
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  // GF(256), primitive polynomial 0x11d. The disjoint Cauchy indices make
+  // every square submatrix invertible, including in shortened generations.
+  const exponent = new Uint8Array(510);
+  const logarithm = new Uint8Array(256);
+  let element = 1;
+  for (let index = 0; index < 255; index++) {
+    exponent[index] = element;
+    logarithm[element] = index;
+    element <<= 1;
+    if (element & 256) element ^= 0x11d;
+  }
+  exponent.copyWithin(255, 0, 255);
+  const multiplication = Array.from({length: 256}, (_, left) => {
+    const row = new Uint8Array(256);
+    if (left) {
+      for (let right = 1; right < 256; right++) {
+        row[right] = exponent[logarithm[left] + logarithm[right]];
+      }
+    }
+    return row;
+  });
+
+  function inverse(value) {
+    return exponent[255 - logarithm[value]];
+  }
+
+  function coefficient(parityIndex, dataIndex) {
+    return inverse(parityIndex ^ dataIndex);
+  }
+
+  function xorScaled(target, source, factor, start = 0) {
+    const scale = multiplication[factor];
+    for (let index = start; index < source.length; index++) target[index] ^= scale[source[index]];
+  }
+
+  function hex(bytes) {
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function sha256(bytes) {
+    if (!globalThis.crypto?.subtle) throw new Error('SHA-256 requires a secure browser context.');
+    return new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
+  }
+
+  function parityFor(count, fecPercent) {
+    return Math.ceil(count * fecPercent / 100);
+  }
+
+  function dimensions(size, nameLength, fecPercent) {
+    const streamLength = HASH_BYTES + nameLength + size;
+    const dataShards = Math.ceil(streamLength / SHARD_BYTES);
+    const parityShards = Math.floor(dataShards / MAX_DATA_SHARDS) * parityFor(MAX_DATA_SHARDS, fecPercent)
+      + parityFor(dataShards % MAX_DATA_SHARDS, fecPercent);
+    return {
+      streamLength,
+      dataShards,
+      parityShards,
+      frameCount: dataShards + parityShards,
+      generations: Math.ceil(dataShards / MAX_DATA_SHARDS),
+    };
+  }
+
+  function generationSize(dataShards, generation) {
+    return Math.min(MAX_DATA_SHARDS, dataShards - generation * MAX_DATA_SHARDS);
+  }
+
+  function makeFrame(identity, size, nameLength, generation, shard, payload, fecCode) {
+    const frame = new Uint8Array(FRAME_BYTES);
+    const view = new DataView(frame.buffer);
+    frame[0] = 0x46;
+    frame[1] = 0x4d;
+    frame[2] = fecCode;
+    frame[3] = shard;
+    frame.set(identity, 4);
+    view.setUint32(12, size, true);
+    view.setUint16(16, generation, true);
+    view.setUint16(18, nameLength, true);
+    frame.set(payload, HEADER_BYTES);
+    view.setUint32(FRAME_BYTES - 4, crc32(frame.subarray(0, FRAME_BYTES - 4)), true);
+    return frame;
+  }
+
+  function validateFrame(frame) {
+    if (!(frame instanceof Uint8Array) || frame.length !== FRAME_BYTES ||
+        frame[0] !== 0x46 || frame[1] !== 0x4d) return null;
+    const fecPercent = fecPercents.get(frame[2]);
+    if (fecPercent === undefined) return null;
+    const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+    const size = view.getUint32(12, true);
+    const generation = view.getUint16(16, true);
+    const nameLength = view.getUint16(18, true);
+    const shard = frame[3];
+    if (size > MAX_FILE_BYTES || !nameLength || nameLength > MAX_NAME_BYTES) return null;
+    const lengths = dimensions(size, nameLength, fecPercent);
+    if (generation >= lengths.generations) return null;
+    const required = generationSize(lengths.dataShards, generation);
+    const parityCount = parityFor(required, fecPercent);
+    if (shard >= MAX_DATA_SHARDS + parityCount || (shard >= required && shard < MAX_DATA_SHARDS)) return null;
+    if (view.getUint32(FRAME_BYTES - 4, true) !== crc32(frame.subarray(0, FRAME_BYTES - 4))) return null;
+    return {id: hex(frame.subarray(4, 12)), size, nameLength, generation, shard, required, fecPercent, parityCount, ...lengths};
+  }
+
+  function makeGeneration(stream, index, count, fecPercent) {
+    const parityCount = parityFor(count, fecPercent);
+    const shards = new Map();
+    for (let dataIndex = 0; dataIndex < count; dataIndex++) {
+      const offset = index * GENERATION_BYTES + dataIndex * SHARD_BYTES;
+      const shard = new Uint8Array(SHARD_BYTES);
+      shard.set(stream.subarray(offset, offset + SHARD_BYTES));
+      shards.set(dataIndex, shard);
+    }
+    for (let parity = MAX_DATA_SHARDS; parity < MAX_DATA_SHARDS + parityCount; parity++) {
+      const shard = new Uint8Array(SHARD_BYTES);
+      for (let dataIndex = 0; dataIndex < count; dataIndex++) {
+        xorScaled(shard, shards.get(dataIndex), coefficient(parity, dataIndex));
+      }
+      shards.set(parity, shard);
+    }
+    return {index, count, parityCount, shards};
+  }
+
+  async function encodeFile(name, data, {fecPercent = DEFAULT_FEC_PERCENT} = {}) {
+    if (!(data instanceof Uint8Array)) throw new TypeError('File data must be a Uint8Array.');
+    if (data.length > MAX_FILE_BYTES) throw new RangeError('File exceeds the 16 MiB protocol limit.');
+    const fecCode = fecCodes.get(fecPercent);
+    if (fecCode === undefined) throw new RangeError('Unsupported FEC parity percentage.');
+    name = String(name || 'fichier.bin');
+    const encodedName = new TextEncoder().encode(name);
+    if (encodedName.length > MAX_NAME_BYTES) throw new RangeError('File name exceeds 1024 UTF-8 bytes.');
+    const {streamLength, generations, dataShards, parityShards, frameCount} =
+      dimensions(data.length, encodedName.length, fecPercent);
+    const stream = new Uint8Array(streamLength);
+    stream.set(encodedName, HASH_BYTES);
+    stream.set(data, HASH_BYTES + encodedName.length);
+    const hash = await sha256(stream.subarray(HASH_BYTES + encodedName.length));
+    stream.set(hash);
+    const identity = globalThis.crypto.getRandomValues(new Uint8Array(8));
+    const size = data.length;
+    const manifest = Object.freeze({
+      name, size, sha256: hex(hash), id: hex(identity), generations,
+      frameCount, dataShards, parityShards, fecPercent,
+      paddingBytes: dataShards * SHARD_BYTES - streamLength,
+    });
+
+    // Bound interleaving storage while separating each generation's adjacent
+    // shards on air. Spread parity evenly through each generation's data rounds.
+    function* frames() {
+      const maxParityPerRound = Math.ceil(fecPercent / 100);
+      for (let first = 0; first < generations; first += INTERLEAVE_GENERATIONS) {
+        const count = Math.min(INTERLEAVE_GENERATIONS, generations - first);
+        const group = Array.from({length: count}, (_, index) => {
+          const generation = first + index;
+          return makeGeneration(stream, generation, generationSize(dataShards, generation), fecPercent);
+        });
+        for (let index = 0; index < MAX_DATA_SHARDS; index++) {
+          const round = group.filter(({count}) => index < count);
+          for (const {index: generation, shards} of round) {
+            yield makeFrame(identity, size, encodedName.length, generation, index, shards.get(index), fecCode);
+          }
+          for (let offset = 0; offset < maxParityPerRound; offset++) {
+            for (const {index: generation, count, parityCount, shards} of round) {
+              const parityIndex = Math.floor(index * parityCount / count) + offset;
+              if (parityIndex >= Math.floor((index + 1) * parityCount / count)) continue;
+              const shard = MAX_DATA_SHARDS + parityIndex;
+              yield makeFrame(identity, size, encodedName.length, generation, shard, shards.get(shard), fecCode);
+            }
+          }
+        }
+      }
+    }
+
+    return {manifest, frameCount, frames};
+  }
+
+  function recoverGeneration(received, count) {
+    const data = Array.from({length: count}, (_, index) => received.get(index));
+    const missing = [];
+    for (let index = 0; index < count; index++) {
+      if (!data[index]) missing.push(index);
+    }
+    const unknowns = missing.length;
+    if (!unknowns) return {data, recovered: 0};
+
+    // Eliminate only the missing data columns. Known systematic shards can be
+    // removed from each parity right-hand side without a matrix inversion.
+    const rows = [];
+    for (const [parity, shard] of received) {
+      if (parity < MAX_DATA_SHARDS) continue;
+      const row = new Uint8Array(unknowns + SHARD_BYTES);
+      missing.forEach((index, column) => { row[column] = coefficient(parity, index); });
+      const residual = row.subarray(unknowns);
+      residual.set(shard);
+      for (let index = 0; index < count; index++) {
+        if (data[index]) xorScaled(residual, data[index], coefficient(parity, index));
+      }
+      rows.push(row);
+    }
+
+    for (let column = 0; column < unknowns; column++) {
+      const pivot = rows.findIndex((row, index) => index >= column && row[column] !== 0);
+      if (pivot < 0) throw new Error('Singular erasure code matrix.');
+      [rows[column], rows[pivot]] = [rows[pivot], rows[column]];
+      const row = rows[column];
+      const scale = multiplication[inverse(row[column])];
+      for (let index = column; index < row.length; index++) row[index] = scale[row[index]];
+      for (let index = 0; index < unknowns; index++) {
+        if (index !== column && rows[index][column]) xorScaled(rows[index], row, rows[index][column], column);
+      }
+    }
+    missing.forEach((index, column) => { data[index] = rows[column].subarray(unknowns); });
+    return {data, recovered: unknowns};
+  }
+
+  class FileReceiver {
+    constructor() {
+      this.reset();
+    }
+
+    reset() {
+      this.transfer = null;
+      this.pending = new Map();
+      this.decodedGenerations = 0;
+      this.receivedShards = 0;
+      this.recoveredDataShards = 0;
+      this.verification = null;
+    }
+
+    progress() {
+      const transfer = this.transfer;
+      return {
+        active: transfer !== null,
+        complete: transfer !== null && this.decodedGenerations === transfer.generations,
+        id: transfer?.id ?? null,
+        size: transfer?.size ?? 0,
+        generations: transfer?.generations ?? 0,
+        dataShards: transfer?.dataShards ?? 0,
+        parityShards: transfer?.parityShards ?? 0,
+        frameCount: transfer?.frameCount ?? 0,
+        fecPercent: transfer?.fecPercent ?? null,
+        decodedGenerations: this.decodedGenerations,
+        receivedShards: this.receivedShards,
+        recoveredDataShards: this.recoveredDataShards,
+      };
+    }
+
+    push(frame) {
+      const result = (accepted, reason) => {
+        const progress = this.progress();
+        return {accepted, reason, complete: progress.complete, progress};
+      };
+      const header = validateFrame(frame);
+      if (!header) return result(false, 'invalid-frame');
+      if (!this.transfer) {
+        this.transfer = {
+          ...header,
+          bytes: new Uint8Array(header.streamLength),
+          decoded: new Uint8Array(header.generations),
+        };
+      }
+      const transfer = this.transfer;
+      if (header.id !== transfer.id || header.size !== transfer.size ||
+          header.nameLength !== transfer.nameLength || header.fecPercent !== transfer.fecPercent) {
+        return result(false, 'different-transfer');
+      }
+      if (transfer.decoded[header.generation]) return result(false, 'generation-decoded');
+      if (!this.pending.has(header.generation)) this.pending.set(header.generation, new Map());
+      const received = this.pending.get(header.generation);
+      if (received.has(header.shard)) return result(false, 'duplicate-shard');
+      received.set(header.shard, new Uint8Array(frame.subarray(HEADER_BYTES, HEADER_BYTES + SHARD_BYTES)));
+      this.receivedShards++;
+      if (received.size === header.required) {
+        const {data, recovered} = recoverGeneration(received, header.required);
+        for (let index = 0; index < data.length; index++) {
+          const offset = header.generation * GENERATION_BYTES + index * SHARD_BYTES;
+          transfer.bytes.set(data[index].subarray(0, transfer.bytes.length - offset), offset);
+        }
+        this.pending.delete(header.generation);
+        transfer.decoded[header.generation] = 1;
+        this.decodedGenerations++;
+        this.recoveredDataShards += recovered;
+      }
+      return result(true, 'accepted');
+    }
+
+    async finish() {
+      const transfer = this.transfer;
+      if (!transfer) return {ok: false, reason: 'no-transfer', progress: this.progress()};
+      if (this.decodedGenerations !== transfer.generations) {
+        const missing = [];
+        for (let generation = 0; generation < transfer.generations; generation++) {
+          if (transfer.decoded[generation]) continue;
+          const needed = generationSize(transfer.dataShards, generation);
+          const received = this.pending.get(generation)?.size ?? 0;
+          missing.push({generation, needed, received});
+        }
+        return {ok: false, reason: 'incomplete', progress: this.progress(), missing};
+      }
+      if (!this.verification) this.verification = this.verify(transfer);
+      return this.verification;
+    }
+
+    async verify(transfer) {
+      const nameEnd = HASH_BYTES + transfer.nameLength;
+      const data = transfer.bytes.subarray(nameEnd);
+      const expected = hex(transfer.bytes.subarray(0, HASH_BYTES));
+      const actual = hex(await sha256(data));
+      if (expected !== actual) return {ok: false, reason: 'sha256-mismatch', id: transfer.id, expected, actual};
+      let name;
+      try {
+        name = new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(transfer.bytes.subarray(HASH_BYTES, nameEnd));
+      } catch {
+        return {ok: false, reason: 'invalid-filename', id: transfer.id};
+      }
+      return {ok: true, name, data, size: transfer.size, sha256: actual, id: transfer.id};
+    }
+  }
+
+  return Object.freeze({
+    FRAME_BYTES, MAX_FILE_BYTES, SHARD_BYTES, MAX_DATA_SHARDS,
+    INTERLEAVE_GENERATIONS, FEC_OPTIONS, DEFAULT_FEC_PERCENT, encodeFile, validateFrame, FileReceiver,
+  });
+})();
+</script>
+<script id="fmFileDspSource" type="text/plain">
+(() => {
+  'use strict';
+
+  // One-way FM packet transport, inspired by softmodem's caller channels.
+  // https://github.com/kaboom748/softmodem/blob/main/v22bisV3.html
+  const sampleRate=120000, frameBytes=152, DEC=10, RATE=sampleRate/DEC;
+  const FSK_SYMBOL=RATE/300, PSK_SYMBOL=RATE/600, FSK_PERIOD=600, TAU=2*Math.PI;
+  const LEAD=8, SYNC=64, START=120, GUARD=60, TAIL=240, PILOT_INTERVAL=40;
+  const DATA_BITS=8*frameBytes, TERMINATION=4, CODE_BITS=2*(DATA_BITS+TERMINATION);
+  const SYMBOL_INTERVAL=sampleRate/2;
+  const IQ_TRAIN=40, RRC_HALF=3*PSK_SYMBOL;
+  const RING=65536, MASK=RING-1, LOWPASS_LENGTH=63;
+  const phaseSteps=[1,0,2,3], axes=[-3,-1,3,1];
+  const QUAD_I=[1,0,-1,0], QUAD_Q=[0,1,0,-1];
+  // V.BoOm simplex settings. Integer MPX samples per symbol preserve the
+  // timing grid, while the full HQ input keeps both QAM sidebands.
+  const BOOM_RATE=30000, BOOM_BITS=4, BOOM_CARRIER=Math.round(BOOM_RATE*.8);
+  const BOOM_PUNCTURE=true;
+  const profiles=Object.freeze({
+    v21:Object.freeze({id:'v21', name:'V.21', modulation:'BFSK', grossRate:300, symbolRate:300, tones:[980,1180], bitsPerSymbol:1, seed:0x89a936e1}),
+    v22:Object.freeze({id:'v22', name:'V.22', modulation:'DQPSK', grossRate:1200, symbolRate:600, carrier:1200, bitsPerSymbol:2, seed:0x5bc17d8d}),
+    v22bis:Object.freeze({id:'v22bis', name:'V.22bis', modulation:'16-QAM', grossRate:2400, symbolRate:600, carrier:1200, bitsPerSymbol:4, seed:0xeb4dd725}),
+    vboom:Object.freeze({id:'vboom', name:'V.BoOm', modulation:`${2**BOOM_BITS}-QAM`, grossRate:BOOM_RATE*BOOM_BITS,
+      symbolRate:BOOM_RATE, carrier:BOOM_CARRIER, bitsPerSymbol:BOOM_BITS, seed:0x286b3e91})
+  });
+
+  function getProfile(id) {
+    if(!Object.hasOwn(profiles,id)) throw Error('Profil modem inconnu.');
+    return profiles[id];
+  }
+  function pseudoBits(count,seed) {
+    const result=new Uint8Array(count);
+    let state=seed;
+    for(let n=0;n<count;n++) {
+      state^=state<<13; state^=state>>>17; state^=state<<5;
+      result[n]=state&1;
+    }
+    return result;
+  }
+  const syncBits=Object.fromEntries(Object.values(profiles).map(p=>[p.id,pseudoBits(SYNC,p.seed)]));
+  const whitening=pseudoBits(DATA_BITS,0x1ac75d43);
+  const preamble=Object.fromEntries(Object.values(profiles).map(p=>[p.id,Uint8Array.from(
+    {length:LEAD+SYNC},(_,n)=>n<LEAD ? n&1 : syncBits[p.id][n-LEAD]
+  )]));
+  const fskOsc=[980,1180].map(f=>({
+    i:Float64Array.from({length:FSK_PERIOD},(_,n)=>Math.cos(TAU*f*n/RATE)),
+    q:Float64Array.from({length:FSK_PERIOD},(_,n)=>-Math.sin(TAU*f*n/RATE))
+  }));
+  const mixI=Float64Array.from({length:10},(_,n)=>Math.cos(TAU*n/10));
+  const mixQ=Float64Array.from({length:10},(_,n)=>-Math.sin(TAU*n/10));
+  const sinc=x=>x===0?1:Math.sin(Math.PI*x)/(Math.PI*x);
+  const lowpass=Float64Array.from({length:LOWPASS_LENGTH},(_,n)=>{
+    const t=n-(LOWPASS_LENGTH-1)/2, w=TAU*n/(LOWPASS_LENGTH-1), cutoff=3200/sampleRate;
+    return 2*cutoff*sinc(2*cutoff*t)*(.42-.5*Math.cos(w)+.08*Math.cos(2*w));
+  });
+  const lowpassSum=lowpass.reduce((a,b)=>a+b);
+  for(let n=0;n<lowpass.length;n++) lowpass[n]/=lowpassSum;
+
+  function rrc(t,a=.75) {
+    if(Math.abs(t)<1e-8) return 1-a+4*a/Math.PI;
+    if(Math.abs(Math.abs(t)-1/(4*a))<1e-8) {
+      return a/Math.SQRT2*((1+2/Math.PI)*Math.sin(Math.PI/(4*a))+(1-2/Math.PI)*Math.cos(Math.PI/(4*a)));
+    }
+    return (Math.sin(Math.PI*t*(1-a))+4*a*t*Math.cos(Math.PI*t*(1+a)))/(Math.PI*t*(1-16*a*a*t*t));
+  }
+  const pulse=Float64Array.from({length:2*RRC_HALF+1},(_,n)=>rrc((n-RRC_HALF)/PSK_SYMBOL));
+  const pulseEnergy=pulse.reduce((sum,tap)=>sum+tap*tap,0);
+  const qam=Array.from({length:16},(_,n)=>[axes[n>>2]/Math.sqrt(10),axes[n&3]/Math.sqrt(10)]);
+  const trainingBits=pseudoBits(2*IQ_TRAIN,0x4ef3359b);
+  const train=Array.from({length:IQ_TRAIN},(_,n)=>{
+    const k=2*trainingBits[2*n]+trainingBits[2*n+1];
+    return [QUAD_I[k],QUAD_Q[k]];
+  });
+  const pilots=[[1,0],[0,1]];
+
+  function parity(value) {
+    value^=value>>4; value^=value>>2; value^=value>>1;
+    return value&1;
+  }
+  // 16-state, terminated rate-1/2 convolutional code (octal 23 and 35).
+  const branches=Array.from({length:32},(_,reg)=>[parity(reg&0x13),parity(reg&0x1d)]);
+  const wireOrder=Uint16Array.from({length:CODE_BITS},(_,i)=>(i*137)%CODE_BITS);
+  function packetBits(bytes,coded) {
+    const bits=new Uint8Array(coded?CODE_BITS:DATA_BITS);
+    let state=0;
+    for(let i=0;i<(coded?DATA_BITS+TERMINATION:DATA_BITS);i++) {
+      const bit=i<DATA_BITS?((bytes[i>>3]>>(7-(i&7)))&1)^whitening[i]:0;
+      if(coded) {
+        const reg=(state<<1)|bit, pair=branches[reg];
+        bits[wireOrder[2*i]]=pair[0];
+        bits[wireOrder[2*i+1]]=pair[1];
+        state=reg&15;
+      } else bits[i]=bit;
+    }
+    return bits;
+  }
+  function packBits(bits) {
+    const bytes=new Uint8Array(frameBytes);
+    for(let i=0;i<DATA_BITS;i++) bytes[i>>3]|=(bits[i]^whitening[i])<<(7-(i&7));
+    return bytes;
+  }
+  function viterbi(soft) {
+    const steps=DATA_BITS+TERMINATION, survivor=new Uint8Array(steps*16);
+    let cost=new Float64Array(16), next=new Float64Array(16);
+    cost.fill(Infinity); cost[0]=0;
+    for(let n=0;n<steps;n++) {
+      const a=soft[wireOrder[2*n]], b=soft[wireOrder[2*n+1]];
+      for(let state=0;state<16;state++) {
+        const lo=state, hi=state|16, p=lo>>1, q=hi>>1;
+        const first=branches[lo], second=branches[hi];
+        const low=cost[p]+(first[0]?-a:a)+(first[1]?-b:b);
+        const high=cost[q]+(second[0]?-a:a)+(second[1]?-b:b);
+        if(low<=high) { next[state]=low; survivor[16*n+state]=p; }
+        else { next[state]=high; survivor[16*n+state]=q; }
+      }
+      [cost,next]=[next,cost];
+    }
+    const bits=new Uint8Array(DATA_BITS);
+    let state=0;
+    for(let n=steps-1;n>=0;n--) {
+      if(n<DATA_BITS) bits[n]=state&1;
+      state=survivor[16*n+state];
+    }
+    return packBits(bits);
+  }
+
+  function symbolLayout(profile) {
+    const count=CODE_BITS/profile.bitsPerSymbol;
+    return IQ_TRAIN+count+pilots.length*Math.ceil(count/PILOT_INTERVAL);
+  }
+  function bodySize(profile) {
+    return profile.id==='v21'?DATA_BITS*FSK_SYMBOL:
+      GUARD+symbolLayout(profile)*PSK_SYMBOL+2*RRC_HALF;
+  }
+  function samplesPerFrame(id) {
+    const profile=getProfile(id);
+    if(id==='vboom') return boomFrameSamples;
+    return (START+(LEAD+SYNC)*FSK_SYMBOL+bodySize(profile)+TAIL)*DEC;
+  }
+
+  function writeFsk(out,start,groups,level) {
+    let at=start, phase=0;
+    for(const bits of groups) for(const bit of bits) {
+      const step=TAU*(bit?1180:980)/RATE;
+      for(let n=0;n<FSK_SYMBOL;n++) {
+        out[at++]=level*Math.sin(phase);
+        phase+=step;
+        if(phase>=TAU) phase-=TAU;
+      }
+    }
+  }
+
+  function iqSymbols(profile,bits,observer) {
+    const symbols=train.slice(), count=CODE_BITS/profile.bitsPerSymbol;
+    const origin=START+(LEAD+SYNC)*FSK_SYMBOL+GUARD+RRC_HALF;
+    for(let first=0;first<count;first+=PILOT_INTERVAL) {
+      symbols.push(...pilots);
+      let phase=1;
+      for(let n=first;n<Math.min(count,first+PILOT_INTERVAL);n++) {
+        const at=n*profile.bitsPerSymbol, dibit=2*bits[at]+bits[at+1];
+        const sample=observer?(origin+symbols.length*PSK_SYMBOL)*DEC:0;
+        if(profile.id==='v22') {
+          const step=phaseSteps[dibit];
+          phase=(phase+step)&3;
+          symbols.push([QUAD_I[phase],QUAD_Q[phase]]);
+          if(observer && sample>=observer.next) observer.emit({sample,i:QUAD_I[step],q:QUAD_Q[step]});
+        } else {
+          const point=qam[4*dibit+2*bits[at+2]+bits[at+3]];
+          symbols.push(point);
+          if(observer && sample>=observer.next) observer.emit({sample,i:point[0],q:point[1]});
+        }
+      }
+    }
+    return symbols;
+  }
+
+  function writeIq(out,start,symbols,level) {
+    const length=symbols.length*PSK_SYMBOL+2*RRC_HALF;
+    const i=new Float64Array(length), q=new Float64Array(length);
+    for(let n=0;n<symbols.length;n++) {
+      const [re,im]=symbols[n], first=n*PSK_SYMBOL;
+      for(let k=0;k<pulse.length;k++) {
+        i[first+k]+=pulse[k]*re; q[first+k]+=pulse[k]*im;
+      }
+    }
+    let peak=1.55;
+    for(let n=0;n<length;n++) {
+      i[n]=i[n]*mixI[n%10]+q[n]*mixQ[n%10];
+      peak=Math.max(peak,Math.abs(i[n]));
+    }
+    const gain=level/peak;
+    for(let n=0;n<length;n++) out[start+n]=gain*i[n];
+  }
+
+  function modulate(id,bytes,{level=82,symbolFrom=0,onSymbol}={}) {
+    const profile=getProfile(id);
+    if(!(bytes instanceof Uint8Array) || bytes.length!==frameBytes) throw Error('Une trame modem exige 152 octets.');
+    if(!Number.isFinite(level) || level<1 || level>127) throw Error('Niveau MPX hors limites.');
+    const observer=onSymbol?{
+      next:symbolFrom,
+      emit(point) {
+        this.next=point.sample+SYMBOL_INTERVAL;
+        onSymbol(point);
+      }
+    }:null;
+    if(id==='vboom') return boomModulate(bytes,level,observer);
+    const fsk=id==='v21', bits=packetBits(bytes,!fsk);
+    const low=new Float64Array(samplesPerFrame(id)/DEC);
+    writeFsk(low,START,fsk?[preamble[id],bits]:[preamble[id]],level);
+    if(!fsk) writeIq(low,START+(LEAD+SYNC)*FSK_SYMBOL+GUARD,iqSymbols(profile,bits,observer),level);
+    if(fsk && observer) {
+      const step=FSK_SYMBOL*DEC, first=(START+(LEAD+SYNC)*FSK_SYMBOL+FSK_SYMBOL/2)*DEC;
+      for(let k=Math.max(0,Math.ceil((observer.next-first)/step));k<bits.length;k+=SYMBOL_INTERVAL/step) {
+        const bit=bits[k];
+        observer.emit({sample:first+k*step,tone:profile.tones[bit],low:1-bit,high:bit});
+      }
+    }
+    const out=new Int8Array(low.length*DEC);
+    for(let n=0;n<low.length-1;n++) {
+      const first=low[n], step=(low[n+1]-first)/DEC;
+      for(let k=0;k<DEC;k++) out[DEC*n+k]=Math.round(first+k*step);
+    }
+    return out;
+  }
+
+  class Receiver {
+    constructor({profile='v21',onFrame,onStats,onSymbol,validateFrame}={}) {
+      this.profile=getProfile(profile);
+      this.onFrame=onFrame; this.onStats=onStats; this.onSymbol=onSymbol;
+      this.validateFrame=validateFrame || globalThis.FM_FILE_PROTOCOL?.validateFrame;
+      if(profile==='vboom') {
+        this.fast=new BoomDemodulator(this);
+        this.reset();
+        return;
+      }
+      this.fir=new Float64Array(2*LOWPASS_LENGTH);
+      this.firMissing=new Uint8Array(LOWPASS_LENGTH);
+      this.base=new Float64Array(RING);
+      this.baseQuality=new Float32Array(RING);
+      this.toneWindow=new Float64Array(FSK_SYMBOL*4);
+      this.toneSums=new Float64Array(4);
+      this.history=new Float32Array(FSK_SYMBOL*SYNC);
+      this.syncSigns=Float32Array.from(syncBits[profile],bit=>bit?1:-1);
+      this.reset();
+    }
+    reset() {
+      this.expectedIndex=null; this.count=0; this.at=0; this.dec=0;
+      this.dc=0; this.firAt=0; this.firLoss=0; this.nextReport=sampleRate/4;
+      this.pending=null;
+      this.nextSymbol=0;
+      this.frames=0; this.crcFailures=0; this.syncs=0; this.erasures=0;
+      this.score=0; this.training=0;
+      if(this.fast) {
+        this.fast.reset();
+        return;
+      }
+      this.fir.fill(0); this.firMissing.fill(0);
+      this.clearSearch();
+    }
+    clearSearch() {
+      this.candidate=null; this.searchStart=this.at;
+      this.history.fill(0); this.toneWindow.fill(0); this.toneSums.fill(0);
+    }
+    stats() {
+      return {profile:this.profile.id,samples:this.count,frames:this.frames,crcFailures:this.crcFailures,
+        syncs:this.syncs,erasures:this.erasures,state:this.pending?'packet':'search',score:this.score,training:this.training};
+    }
+    push(samples,index=this.expectedIndex??0) {
+      if(!(samples instanceof Int8Array)) throw Error('Échantillons MPX8 invalides.');
+      if(!Number.isInteger(index) || index<0) throw Error('Index MPX invalide.');
+      index>>>=0;
+      let first=0;
+      if(this.expectedIndex!==null) {
+        const delta=(index-this.expectedIndex)|0;
+        if(delta>0) this.gap(delta);
+        if(delta<0) first=Math.min(samples.length,-delta);
+      }
+      if(first===samples.length) return;
+      for(let n=first;n<samples.length;n++) this.sample(samples[n]);
+      this.expectedIndex=(index+samples.length)>>>0;
+      this.report();
+    }
+    gap(count) {
+      if(!Number.isSafeInteger(count) || count<0) throw Error('Longueur de perte invalide.');
+      if(count>=sampleRate/2) {
+        if(this.pending) this.crcFailures++;
+        this.pending=null; this.count+=count; this.erasures+=count;
+        this.dc=0;
+        if(this.fast) this.fast.reset();
+        else {
+          const ticks=this.dec+count;
+          this.at+=Math.floor(ticks/DEC); this.dec=ticks%DEC;
+          this.fir.fill(0); this.firMissing.fill(0);
+          this.firAt=0; this.firLoss=0;
+          this.clearSearch();
+        }
+      } else {
+        for(let n=0;n<count;n++) this.sample(-128);
+      }
+      this.expectedIndex=((this.expectedIndex??0)+count)>>>0;
+      this.report();
+    }
+    report() {
+      if(this.count<this.nextReport) return;
+      this.nextReport=this.count+sampleRate/4;
+      this.onStats?.(this.stats());
+    }
+    sample(value) {
+      this.count++;
+      const missing=value===-128;
+      if(missing) this.erasures++;
+      else this.dc+=.003*(value-this.dc);
+      if(this.fast) {
+        this.fast.sample(missing?0:value-this.dc,missing);
+        return;
+      }
+      const at=this.firAt, x=missing?0:value-this.dc;
+      this.fir[at]=this.fir[at+LOWPASS_LENGTH]=x;
+      this.firLoss+=Number(missing)-this.firMissing[at];
+      this.firMissing[at]=Number(missing);
+      if(++this.firAt===LOWPASS_LENGTH) this.firAt=0;
+      if(++this.dec<DEC) return;
+      this.dec=0;
+      let filtered=0;
+      for(let n=0;n<LOWPASS_LENGTH;n++) filtered+=lowpass[n]*this.fir[this.firAt+n];
+      this.accept(filtered,1-this.firLoss/LOWPASS_LENGTH);
+    }
+    accept(value,quality) {
+      const at=this.at++;
+      this.base[at&MASK]=value;
+      this.baseQuality[at&MASK]=quality;
+      if(this.pending) {
+        if(this.onSymbol && at>=this.pending.previewAt) this.preview(at);
+        if(at>=this.pending.end) this.finish();
+        return;
+      }
+      const phase=at%FSK_SYMBOL, group=Math.floor(at/FSK_SYMBOL)%SYNC;
+      const osc=at%FSK_PERIOD, previous=4*phase;
+      const r0=value*fskOsc[0].i[osc], q0=value*fskOsc[0].q[osc];
+      const r1=value*fskOsc[1].i[osc], q1=value*fskOsc[1].q[osc];
+      this.toneSums[0]+=r0-this.toneWindow[previous];
+      this.toneSums[1]+=q0-this.toneWindow[previous+1];
+      this.toneSums[2]+=r1-this.toneWindow[previous+2];
+      this.toneSums[3]+=q1-this.toneWindow[previous+3];
+      this.toneWindow[previous]=r0; this.toneWindow[previous+1]=q0;
+      this.toneWindow[previous+2]=r1; this.toneWindow[previous+3]=q1;
+      const a=this.toneSums[0]**2+this.toneSums[1]**2, b=this.toneSums[2]**2+this.toneSums[3]**2;
+      const lane=phase*SYNC;
+      this.history[lane+group]=(b-a)/(a+b+120)*quality;
+      if(at-this.searchStart<FSK_SYMBOL*SYNC) return;
+      let score=0, strength=0;
+      for(let k=0;k<SYNC;k++) {
+        const metric=this.history[lane+((group+1+k)%SYNC)];
+        score+=metric*this.syncSigns[k]; strength+=Math.abs(metric);
+      }
+      score/=SYNC;
+      const coherent=score*SYNC/Math.max(1,strength);
+      if(score>.42 && coherent>.84) {
+        if(!this.candidate) this.candidate={start:at+1,score,until:at+FSK_SYMBOL};
+        else if(score>this.candidate.score) {
+          this.candidate.start=at+1; this.candidate.score=score;
+        }
+      }
+      if(this.candidate && at>=this.candidate.until) {
+        const {start,score}=this.candidate;
+        this.pending={start,end:start+bodySize(this.profile)+32};
+        if(this.onSymbol) {
+          this.pending.previewAt=this.profile.id==='v21'?start+FSK_SYMBOL-1:
+            start+GUARD+2*RRC_HALF+12+(train.length-3)*PSK_SYMBOL;
+        }
+        this.syncs++; this.score=score;
+      }
+    }
+    observe(point) {
+      if(!(point.confidence>1e-6)) return;
+      point.confidence=Math.min(point.confidence,1);
+      this.nextSymbol=point.sample+SYMBOL_INTERVAL;
+      this.onSymbol(point);
+    }
+    fskBit(start,preview=false) {
+      let i0=0,q0=0,i1=0,q1=0;
+      for(let k=0;k<FSK_SYMBOL;k++) {
+        const at=start+k, s=this.base[at&MASK], phase=at%FSK_PERIOD;
+        i0+=s*fskOsc[0].i[phase]; q0+=s*fskOsc[0].q[phase];
+        i1+=s*fskOsc[1].i[phase]; q1+=s*fskOsc[1].q[phase];
+      }
+      const a=i0*i0+q0*q0, b=i1*i1+q1*q1, bit=Number(b>a);
+      if(preview) {
+        let quality=0;
+        for(let k=0;k<FSK_SYMBOL;k++) quality+=this.baseQuality[(start+k)&MASK];
+        const total=a+b;
+        this.observe({sample:(start+FSK_SYMBOL/2)*DEC,tone:this.profile.tones[bit],
+          low:total?a/total:.5,high:total?b/total:.5,confidence:quality/FSK_SYMBOL});
+      }
+      return bit;
+    }
+    fskPacket(start) {
+      const bits=Uint8Array.from({length:DATA_BITS},(_,n)=>this.fskBit(start+n*FSK_SYMBOL));
+      return packBits(bits);
+    }
+    matched(center,origin) {
+      let re=0,im=0,reliability=0;
+      for(let k=0;k<pulse.length;k++) {
+        const at=center-RRC_HALF+k, phase=(at-origin)%10, tap=pulse[k];
+        const value=this.base[at&MASK]*tap;
+        re+=value*mixI[phase]; im+=value*mixQ[phase];
+        reliability+=tap*tap*this.baseQuality[at&MASK];
+      }
+      return [2*re/pulseEnergy,2*im/pulseEnergy,reliability/pulseEnergy];
+    }
+    alignment(start) {
+      const nominal=start+GUARD+RRC_HALF;
+      let best=null;
+      for(let delta=-12;delta<=12;delta++) {
+        const center=nominal+delta;
+        let re=0,im=0,received=0,known=0;
+        for(let k=2;k<train.length-2;k++) {
+          const [r,j,weight]=this.matched(center+k*PSK_SYMBOL,start);
+          const [i,q]=train[k];
+          re+=(r*i+j*q)*weight; im+=(j*i-r*q)*weight;
+          received+=(r*r+j*j)*weight; known+=(i*i+q*q)*weight;
+        }
+        const score=(re*re+im*im)/Math.max(1,received*known);
+        if(!best || score>best.score) best={score,center,re:re/known,im:im/known};
+      }
+      return best;
+    }
+    updateIqChannel(a,b,channel) {
+      const pi=(a[0]+b[1])/2, pq=(a[1]-b[0])/2;
+      const basePower=channel.i*channel.i+channel.q*channel.q, pilotPower=pi*pi+pq*pq;
+      if(a[2]>.75 && b[2]>.75 && pilotPower>basePower*.22 && pilotPower<basePower*4) {
+        channel.i=.30*channel.i+.70*pi; channel.q=.30*channel.q+.70*pq;
+      }
+    }
+    preview(at) {
+      const pending=this.pending, {start}=pending;
+      if(this.profile.id==='v21') {
+        const index=Math.max(pending.index??0,Math.ceil((this.nextSymbol/DEC-start-FSK_SYMBOL/2)/FSK_SYMBOL));
+        if(index>=DATA_BITS) { pending.previewAt=Infinity; return; }
+        const first=start+index*FSK_SYMBOL, ready=first+FSK_SYMBOL-1;
+        if(at<ready) { pending.previewAt=ready; return; }
+        this.fskBit(first,true);
+        pending.index=index+1;
+        pending.previewAt=at+1;
+        return;
+      }
+      if(!pending.alignment) {
+        pending.alignment=this.alignment(start);
+        const {re,im}=pending.alignment;
+        pending.channel={i:re,q:im,nextPilot:0,lastPilotWeight:1};
+        pending.index=0;
+      }
+      const {score,center}=pending.alignment;
+      if(score<.45) { pending.previewAt=Infinity; return; }
+      const count=CODE_BITS/this.profile.bitsPerSymbol, channel=pending.channel;
+      let k=pending.index, symbol, sample;
+      while(k<count) {
+        symbol=train.length+k+2*(1+Math.floor(k/PILOT_INTERVAL));
+        sample=(center+symbol*PSK_SYMBOL)*DEC;
+        if(sample>=this.nextSymbol) break;
+        k++;
+      }
+      pending.index=k;
+      if(k===count) { pending.previewAt=Infinity; return; }
+      const ready=center+symbol*PSK_SYMBOL+RRC_HALF;
+      if(at<ready) { pending.previewAt=ready; return; }
+      while(channel.nextPilot<=k) {
+        const pilot=train.length+channel.nextPilot+2*(channel.nextPilot/PILOT_INTERVAL);
+        const a=this.matched(center+pilot*PSK_SYMBOL,start);
+        const b=this.matched(center+(pilot+1)*PSK_SYMBOL,start);
+        this.updateIqChannel(a,b,channel);
+        channel.lastPilotWeight=b[2];
+        channel.nextPilot+=PILOT_INTERVAL;
+      }
+      const power=Math.max(.001,channel.i*channel.i+channel.q*channel.q);
+      const [rxI,rxQ,weight]=this.matched(center+symbol*PSK_SYMBOL,start);
+      const i=(rxI*channel.i+rxQ*channel.q)/power, q=(rxQ*channel.i-rxI*channel.q)/power;
+      if(this.profile.id==='v22') {
+        let prevI=0,prevQ=1,prevWeight=channel.lastPilotWeight;
+        if(k%PILOT_INTERVAL) {
+          const [r,j,w]=this.matched(center+(symbol-1)*PSK_SYMBOL,start);
+          prevI=(r*channel.i+j*channel.q)/power; prevQ=(j*channel.i-r*channel.q)/power; prevWeight=w;
+        }
+        this.observe({sample,i:i*prevI+q*prevQ,q:q*prevI-i*prevQ,confidence:Math.min(weight,prevWeight)});
+      } else this.observe({sample,i,q,confidence:weight});
+      pending.index++;
+      pending.previewAt=at+1;
+    }
+    iqPacket(start,alignment=this.alignment(start)) {
+      const {score,center,re,im}=alignment;
+      this.training=score;
+      if(score<.45) return null;
+      const channel={i:re,q:im};
+      let n=train.length;
+      const profile=this.profile, count=CODE_BITS/profile.bitsPerSymbol;
+      const soft=new Float64Array(CODE_BITS);
+      for(let first=0;first<count;first+=PILOT_INTERVAL) {
+        const a=this.matched(center+n++*PSK_SYMBOL,start);
+        const b=this.matched(center+n++*PSK_SYMBOL,start);
+        this.updateIqChannel(a,b,channel);
+        const power=Math.max(.001,channel.i*channel.i+channel.q*channel.q);
+        let prevI=0,prevQ=1,prevWeight=b[2];
+        for(let k=first;k<Math.min(count,first+PILOT_INTERVAL);k++) {
+          const [rxI,rxQ,weight]=this.matched(center+n++*PSK_SYMBOL,start);
+          const i=(rxI*channel.i+rxQ*channel.q)/power, q=(rxQ*channel.i-rxI*channel.q)/power;
+          if(profile.id==='v22') {
+            const diffI=i*prevI+q*prevQ, diffQ=q*prevI-i*prevQ;
+            const trust=Math.min(weight,prevWeight);
+            const likelihood=[diffQ,diffI,-diffI,-diffQ];
+            soft[2*k]=trust*(Math.max(likelihood[2],likelihood[3])-Math.max(likelihood[0],likelihood[1]));
+            soft[2*k+1]=trust*(Math.max(likelihood[1],likelihood[3])-Math.max(likelihood[0],likelihood[2]));
+            prevI=i; prevQ=q; prevWeight=weight;
+          } else {
+            for(let bit=0;bit<4;bit++) {
+              let zero=Infinity,one=Infinity;
+              for(let code=0;code<16;code++) {
+                const [ci,cq]=qam[code], distance=(i-ci)**2+(q-cq)**2;
+                if(code&(8>>bit)) one=Math.min(one,distance);
+                else zero=Math.min(zero,distance);
+              }
+              soft[4*k+bit]=weight*(zero-one);
+            }
+          }
+        }
+      }
+      return viterbi(soft);
+    }
+    finish() {
+      const {start,alignment}=this.pending;
+      this.pending=null;
+      let bytes=null;
+      if(this.profile.id==='v21') {
+        for(const offset of [0,-3,3,-6,6]) {
+          const candidate=this.fskPacket(start+offset);
+          if(!this.validateFrame || this.validateFrame(candidate)) { bytes=candidate; break; }
+        }
+      } else {
+        const candidate=this.iqPacket(start,alignment);
+        if(candidate && (!this.validateFrame || this.validateFrame(candidate))) bytes=candidate;
+      }
+      if(bytes) { this.frames++; this.onFrame?.(bytes); }
+      else this.crcFailures++;
+      this.clearSearch();
+    }
+  }
+
+  const boomRawSymbol=sampleRate/BOOM_RATE;
+  let boomDec=Math.max(1,Math.floor(boomRawSymbol/5));
+  while(boomRawSymbol%boomDec!==0) boomDec--;
+  const boomSymbol=boomRawSymbol/boomDec, boomHalf=3*boomRawSymbol;
+  const boomPulse=Float64Array.from({length:2*boomHalf+1},(_,n)=>rrc((n-boomHalf)/boomRawSymbol,.25));
+  const boomEnergy=boomPulse.reduce((sum,tap)=>sum+tap*tap,0);
+  const boomSync=Array.from(pseudoBits(48,profiles.vboom.seed),bit=>bit?1:-1);
+  const boomTrain=Array.from({length:32},(_,n)=>{
+    const bits=pseudoBits(2,0x102cfd3d+Math.imul(n,0x9e3779b9));
+    return [bits[0]?Math.SQRT1_2:-Math.SQRT1_2,bits[1]?Math.SQRT1_2:-Math.SQRT1_2];
+  });
+  const boomTail=8, boomPilotInterval=32, boomEqRadius=2;
+  const boomAxisBits=BOOM_BITS/2, boomAxisSize=2**boomAxisBits;
+  const boomAxisNorm=Math.sqrt(2*(boomAxisSize*boomAxisSize-1)/3);
+  const boomAxis=Float64Array.from({length:boomAxisSize},(_,i)=>{
+    let binary=i;
+    for(let rest=i>>1;rest;rest>>=1) binary^=rest;
+    return (2*binary-boomAxisSize+1)/boomAxisNorm;
+  });
+  const boomOmitted=new Set();
+  if(BOOM_PUNCTURE) for(let bit=3;bit<CODE_BITS;bit+=4) boomOmitted.add(wireOrder[bit]);
+  const boomKept=Uint16Array.from(Array.from(wireOrder.keys()).filter(bit=>!boomOmitted.has(bit)));
+  const boomCodeSymbols=Math.ceil(boomKept.length/BOOM_BITS);
+  const boomSymbols=boomSync.length+boomTrain.length+boomCodeSymbols+2*Math.ceil(boomCodeSymbols/boomPilotInterval);
+  const boomFrameSamples=(boomSymbols+boomTail)*boomRawSymbol+2*boomHalf;
+  function gcd(a,b) { while(b) [a,b]=[b,a%b]; return a; }
+  const boomOscPeriod=sampleRate/gcd(sampleRate,BOOM_CARRIER);
+  const boomI=Float64Array.from({length:boomOscPeriod},(_,n)=>Math.cos(TAU*BOOM_CARRIER*n/sampleRate));
+  const boomQ=Float64Array.from({length:boomOscPeriod},(_,n)=>-Math.sin(TAU*BOOM_CARRIER*n/sampleRate));
+
+  function boomModulate(bytes,level,observer) {
+    const bits=packetBits(bytes,true);
+    const real=new Float64Array(boomFrameSamples);
+    let n=0;
+    function add(i,q) {
+      const first=n++*boomRawSymbol;
+      for(let k=0;k<boomPulse.length;k++) {
+        const sample=first+k, phase=sample%boomOscPeriod;
+        real[sample]+=boomPulse[k]*(i*boomI[phase]+q*boomQ[phase]);
+      }
+    }
+    for(const sign of boomSync) add(sign,0);
+    for(const [i,q] of boomTrain) add(i,q);
+    for(let first=0;first<boomCodeSymbols;first+=boomPilotInterval) {
+      add(1,0); add(0,1);
+      for(let k=first;k<Math.min(boomCodeSymbols,first+boomPilotInterval);k++) {
+        let i=0,q=0;
+        for(let b=0;b<boomAxisBits;b++) {
+          i=2*i+(bits[boomKept[k*BOOM_BITS+b]]??0);
+          q=2*q+(bits[boomKept[k*BOOM_BITS+boomAxisBits+b]]??0);
+        }
+        const sample=n*boomRawSymbol+boomHalf;
+        add(boomAxis[i],boomAxis[q]);
+        if(observer && sample>=observer.next) observer.emit({sample,i:boomAxis[i],q:boomAxis[q]});
+      }
+    }
+    let peak=1.55;
+    for(const sample of real) peak=Math.max(peak,Math.abs(sample));
+    return Int8Array.from(real,sample=>Math.round(sample*level/peak));
+  }
+
+  class BoomDemodulator {
+    constructor(receiver) {
+      this.receiver=receiver;
+      this.firI=new Float64Array(2*boomPulse.length);
+      this.firQ=new Float64Array(2*boomPulse.length);
+      this.firMissing=new Uint8Array(boomPulse.length);
+      this.i=new Float32Array(RING);
+      this.q=new Float32Array(RING);
+      this.quality=new Float32Array(RING);
+    }
+    reset() {
+      this.raw=0; this.at=0; this.firAt=0; this.lost=0;
+      this.searchFrom=(boomSync.length-1)*boomSymbol;
+      this.candidate=null;
+      this.firI.fill(0); this.firQ.fill(0); this.firMissing.fill(0);
+    }
+    sample(value,missing) {
+      const phase=this.raw%boomOscPeriod, n=this.firAt, length=boomPulse.length;
+      this.firI[n]=this.firI[n+length]=value*boomI[phase];
+      this.firQ[n]=this.firQ[n+length]=value*boomQ[phase];
+      this.lost+=Number(missing)-this.firMissing[n];
+      this.firMissing[n]=Number(missing);
+      this.firAt=(n+1)%length;
+      if(this.raw++%boomDec!==0) return;
+      let i=0,q=0;
+      for(let k=0;k<length;k++) {
+        i+=boomPulse[k]*this.firI[this.firAt+k];
+        q+=boomPulse[k]*this.firQ[this.firAt+k];
+      }
+      this.accept(2*i/boomEnergy,2*q/boomEnergy,1-this.lost/length);
+    }
+    correlation(end) {
+      let re=0,im=0,energy=0,weight=0;
+      for(let n=0;n<boomSync.length;n++) {
+        const index=(end-(boomSync.length-1-n)*boomSymbol)&MASK;
+        const i=this.i[index], q=this.q[index], w=this.quality[index];
+        re+=i*boomSync[n]*w; im+=q*boomSync[n]*w;
+        energy+=(i*i+q*q)*w; weight+=w;
+      }
+      return (re*re+im*im)/Math.max(1,energy*weight);
+    }
+    accept(i,q,quality) {
+      const at=this.at++, slot=at&MASK, rx=this.receiver;
+      this.i[slot]=i; this.q[slot]=q; this.quality[slot]=quality;
+      if(rx.pending) {
+        if(at>=rx.pending.end) this.finish(rx.pending);
+        return;
+      }
+      if(at<this.searchFrom) return;
+      const score=this.correlation(at);
+      if(score>.70) {
+        if(!this.candidate) this.candidate={at,score,until:at+boomSymbol};
+        else if(score>this.candidate.score) {
+          this.candidate.at=at; this.candidate.score=score;
+        }
+      }
+      if(this.candidate && at>=this.candidate.until) {
+        const peak=this.candidate, before=this.correlation(peak.at-1), after=this.correlation(peak.at+1);
+        const curvature=2*(before-2*peak.score+after);
+        const offset=curvature<0?Math.max(-.5,Math.min(.5,(before-after)/curvature)):0;
+        const center=peak.at+offset-(boomSync.length-1)*boomSymbol;
+        rx.pending={center,end:Math.ceil(center+(boomSymbols-1+boomEqRadius)*boomSymbol+2)};
+        rx.syncs++; rx.score=peak.score;
+        this.candidate=null;
+      }
+    }
+    read(at) {
+      const n=Math.floor(at), t=at-n, a=n&MASK, b=(n+1)&MASK;
+      return [
+        this.i[a]+t*(this.i[b]-this.i[a]), this.q[a]+t*(this.q[b]-this.q[a]),
+        this.quality[a]+t*(this.quality[b]-this.quality[a])
+      ];
+    }
+    equalizer(center,channelI,channelQ,trainingWeight) {
+      const taps=2*boomEqRadius+1, columns=2*taps;
+      const gram=Array.from({length:columns},()=>new Float64Array(columns+1));
+      const re=new Float64Array(columns), im=new Float64Array(columns);
+      for(let n=0;n<boomTrain.length;n++) {
+        let weight=1;
+        const at=center+(boomSync.length+n)*boomSymbol;
+        for(let tap=0;tap<taps;tap++) {
+          const [i,q,w]=this.read(at+(tap-boomEqRadius)*boomSymbol);
+          re[2*tap]=i; re[2*tap+1]=-q;
+          im[2*tap]=q; im[2*tap+1]=i;
+          weight=Math.min(weight,w);
+        }
+        if(weight<.85) continue;
+        const [i,q]=boomTrain[n];
+        for(let row=0;row<columns;row++) {
+          for(let col=0;col<columns;col++) gram[row][col]+=weight*(re[row]*re[col]+im[row]*im[col]);
+          gram[row][columns]+=weight*(i*re[row]+q*im[row]);
+        }
+      }
+      // Prefer the flat-channel solution if training contains an erasure or
+      // provides little evidence that the neighboring taps improve the fit.
+      const power=Math.max(.001,channelI*channelI+channelQ*channelQ);
+      const ridge=Math.max(.001,.04*power*trainingWeight);
+      for(let col=0;col<columns;col++) gram[col][col]+=ridge;
+      gram[2*boomEqRadius][columns]+=ridge*channelI/power;
+      gram[2*boomEqRadius+1][columns]-=ridge*channelQ/power;
+      for(let col=0;col<columns;col++) {
+        const pivot=gram[col][col];
+        for(let k=col;k<=columns;k++) gram[col][k]/=pivot;
+        for(let row=0;row<columns;row++) {
+          if(row===col) continue;
+          const factor=gram[row][col];
+          for(let k=col;k<=columns;k++) gram[row][k]-=factor*gram[col][k];
+        }
+      }
+      return gram.map(row=>row[columns]);
+    }
+    equalized(at,coefficients) {
+      let i=0,q=0,weight=0;
+      for(let tap=-boomEqRadius;tap<=boomEqRadius;tap++) {
+        const [re,im,w]=this.read(at+tap*boomSymbol);
+        const coefficient=2*(tap+boomEqRadius);
+        const a=coefficients[coefficient], b=coefficients[coefficient+1];
+        i+=a*re-b*im; q+=a*im+b*re;
+        if(tap===0) weight=w;
+      }
+      return [i,q,weight];
+    }
+    finish({center}) {
+      const rx=this.receiver;
+      rx.pending=null;
+      let channelI=0,channelQ=0,energy=0,known=0,n=boomSync.length;
+      for(const [i,q] of boomTrain) {
+        const [re,im,w]=this.read(center+n++*boomSymbol);
+        channelI+=(re*i+im*q)*w; channelQ+=(im*i-re*q)*w;
+        energy+=(re*re+im*im)*w; known+=w;
+      }
+      rx.training=(channelI*channelI+channelQ*channelQ)/Math.max(1,energy*known);
+      if(rx.training<.40) { rx.crcFailures++; return; }
+      const equalizer=this.equalizer(center,channelI/known,channelQ/known,known);
+      channelI=1; channelQ=0;
+      const codedSoft=new Float64Array(boomCodeSymbols*BOOM_BITS);
+      const origin=rx.count-this.raw;
+      for(let first=0;first<boomCodeSymbols;first+=boomPilotInterval) {
+        const a=this.equalized(center+n++*boomSymbol,equalizer);
+        const b=this.equalized(center+n++*boomSymbol,equalizer);
+        const pi=(a[0]+b[1])/2, pq=(a[1]-b[0])/2;
+        const basePower=channelI*channelI+channelQ*channelQ, pilotPower=pi*pi+pq*pq;
+        if(a[2]>.80 && b[2]>.80 && pilotPower>basePower*.3 && pilotPower<basePower*3) {
+          channelI=.75*channelI+.25*pi; channelQ=.75*channelQ+.25*pq;
+        }
+        const power=Math.max(.001,channelI*channelI+channelQ*channelQ);
+        for(let k=first;k<Math.min(boomCodeSymbols,first+boomPilotInterval);k++) {
+          const at=center+n++*boomSymbol;
+          const [re,im,w]=this.equalized(at,equalizer);
+          const i=(re*channelI+im*channelQ)/power, q=(im*channelI-re*channelQ)/power;
+          if(rx.onSymbol) {
+            const sample=Math.round(origin+at*boomDec);
+            if(sample>=rx.nextSymbol) rx.observe({sample,i,q,confidence:w});
+          }
+          for(let bit=0;bit<boomAxisBits;bit++) {
+            let i0=Infinity,i1=Infinity,q0=Infinity,q1=Infinity;
+            for(let code=0;code<boomAxisSize;code++) {
+              const di=(i-boomAxis[code])**2, dq=(q-boomAxis[code])**2;
+              if(code&(1<<(boomAxisBits-1-bit))) { i1=Math.min(i1,di); q1=Math.min(q1,dq); }
+              else { i0=Math.min(i0,di); q0=Math.min(q0,dq); }
+            }
+            codedSoft[k*BOOM_BITS+bit]=w*(i0-i1);
+            codedSoft[k*BOOM_BITS+boomAxisBits+bit]=w*(q0-q1);
+          }
+        }
+      }
+      const soft=new Float64Array(CODE_BITS);
+      for(let bit=0;bit<boomKept.length;bit++) soft[boomKept[bit]]=codedSoft[bit];
+      const bytes=viterbi(soft);
+      if(!rx.validateFrame || rx.validateFrame(bytes)) { rx.frames++; rx.onFrame?.(bytes); }
+      else rx.crcFailures++;
+    }
+  }
+
+  globalThis.FM_FILE_DSP=Object.freeze({sampleRate,frameBytes,profiles,samplesPerFrame,modulate,Receiver});
+})();
+</script>
+<script id="fmFileSymbolMonitorSource">
+(() => {
+  'use strict';
+
+  const qamLevels = [-3, -1, 1, 3].map(level => level / Math.sqrt(10));
+  const qam = qamLevels.flatMap(i => qamLevels.map(q => [i, q]));
+  const modes = {
+    v21: {name: 'V.21 · 2-FSK'},
+    v22: {name: 'V.22 · DQPSK', points: [[1, 0], [0, 1], [-1, 0], [0, -1]]},
+    v22bis: {name: 'V.22bis · 16-QAM', points: qam},
+    vboom: {name: 'V.BoOm · 16-QAM', points: qam},
+  };
+  const historyLimit = 16;
+  const axisLimit = 1.4;
+  const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
+  const x = i => 153 + 92 * clamp(i, axisLimit) / axisLimit;
+  const y = q => 111 - 92 * clamp(q, axisLimit) / axisLimit;
+  const number = new Intl.NumberFormat('fr-CA', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const percent = new Intl.NumberFormat('fr-CA', {style: 'percent', maximumFractionDigits: 0});
+
+  const css = `
+    .symbol-preview{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:14px;align-items:center;margin-top:10px}
+    .symbol-preview svg{display:block;width:100%;max-width:300px;background:#111a20;border:1px solid var(--line);border-radius:8px;color:var(--dim)}
+    .symbol-preview svg text{fill:currentColor;font:12px system-ui,sans-serif}
+    .symbol-preview .plot-grid{fill:none;stroke:var(--line)}
+    .symbol-preview .ideal-point{fill:#111a20;stroke:var(--dim);stroke-width:1.3}
+    .symbol-preview .current-point,.symbol-preview .point-trail,.symbol-preview .tone-energy{fill:var(--accent)}
+    .symbol-preview .current-point{stroke:#f1f5f7;stroke-width:1}
+    .symbol-preview .symbol-value{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent)}
+    .symbol-preview p{margin:5px 0}
+    @media(max-width:570px){.symbol-preview{grid-template-columns:1fr}}
+  `;
+
+  function iqGrid(points) {
+    return `<rect class="plot-grid" x="61" y="19" width="184" height="184" rx="3"/>
+      <path class="plot-grid" d="M61 111h184M153 19v184"/>
+      <path class="plot-grid" opacity=".45" d="M87 19v184M219 19v184M61 45h184M61 177h184"/>
+      <text x="260" y="115">I</text><text x="149" y="14">Q</text>
+      <text x="87" y="220" text-anchor="middle">−1</text><text x="219" y="220" text-anchor="middle">+1</text>
+      <text x="53" y="49" text-anchor="end">+1</text><text x="53" y="181" text-anchor="end">−1</text>
+      ${points.map(([i, q]) => `<circle class="ideal-point" cx="${x(i)}" cy="${y(q)}" r="4"/>`).join('')}
+      <g data-plot="samples"></g>`;
+  }
+
+  const fskGrid = `
+    <text x="24" y="61">980 Hz · 0</text>
+    <rect class="plot-grid" x="24" y="70" width="222" height="24" rx="3"/>
+    <rect class="tone-energy" data-tone="low" x="24" y="70" width="0" height="24" rx="3"/>
+    <text x="24" y="135">1 180 Hz · 1</text>
+    <rect class="plot-grid" x="24" y="144" width="222" height="24" rx="3"/>
+    <rect class="tone-energy" data-tone="high" x="24" y="144" width="0" height="24" rx="3"/>
+    <text x="24" y="190">0 %</text><text x="246" y="190" text-anchor="end">100 %</text>`;
+
+  function create(host, {direction}) {
+    if (!host) throw new Error('Moniteur de symboles introuvable.');
+    const rx = direction === 'rx';
+    host.innerHTML = `<style>${css}</style><div class="symbol-preview">
+      <svg viewBox="0 0 280 232" role="img" aria-label="Moniteur de symboles"></svg>
+      <div>
+        <p><strong data-symbol="profile"></strong></p>
+        <p data-symbol="value" class="symbol-value">—</p>
+        <p data-symbol="status" class="status"></p>
+        <p><small data-symbol="legend"></small></p>
+        <p><small>Aperçu · 2 symboles/s</small></p>
+      </div></div>`;
+    const plot = host.querySelector('svg');
+    const profileLabel = host.querySelector('[data-symbol="profile"]');
+    const valueLabel = host.querySelector('[data-symbol="value"]');
+    const statusLabel = host.querySelector('[data-symbol="status"]');
+    const legend = host.querySelector('[data-symbol="legend"]');
+    let profile, layer, lowBar, highBar, trail = [];
+    const defaultWait = rx ? 'En attente de symboles démodulés.' : 'En attente de l’émission.';
+
+    function waiting(message = defaultWait) {
+      host.dataset.state = 'waiting';
+      statusLabel.textContent = message;
+    }
+    function clear(message) {
+      trail = [];
+      if (layer) layer.replaceChildren();
+      if (lowBar) lowBar.setAttribute('width', '0');
+      if (highBar) highBar.setAttribute('width', '0');
+      for (const key of ['sample', 'i', 'q', 'tone', 'low', 'high']) delete host.dataset[key];
+      host.dataset.count = '0';
+      valueLabel.textContent = '—';
+      waiting(message);
+    }
+    function setProfile(id) {
+      if (!Object.hasOwn(modes, id) || id === profile) return;
+      profile = id;
+      const mode = modes[id];
+      host.dataset.profile = id;
+      plot.setAttribute('aria-label', mode.name + (mode.points ? ' · Constellation I/Q' : ' · Énergies des deux tonalités'));
+      plot.innerHTML = mode.points ? iqGrid(mode.points) : fskGrid;
+      layer = plot.querySelector('[data-plot="samples"]');
+      lowBar = plot.querySelector('[data-tone="low"]');
+      highBar = plot.querySelector('[data-tone="high"]');
+      profileLabel.textContent = mode.name;
+      legend.textContent = mode.points
+        ? rx ? 'Cercles vides · positions idéales. Points pleins · mesures avant décision.'
+          : 'Cercles vides · positions possibles. Points pleins · symboles transmis.'
+        : rx ? 'Les barres montrent la part d’énergie mesurée sur chaque tonalité.'
+          : 'La barre indique la tonalité idéale du symbole transmis.';
+      clear();
+    }
+    function show(symbol) {
+      if (!profile || !symbol) return;
+      if (profile === 'v21') {
+        const {tone, low, high} = symbol;
+        if (![low, high].every(Number.isFinite) || (tone !== 980 && tone !== 1180)) return;
+        lowBar.setAttribute('width', 222 * Math.max(0, Math.min(1, low)));
+        highBar.setAttribute('width', 222 * Math.max(0, Math.min(1, high)));
+        valueLabel.textContent = `${tone === 980 ? '980' : '1 180'} Hz · bit ${tone === 980 ? 0 : 1}`
+          + (rx ? ` · ${percent.format(low)} / ${percent.format(high)}` : '');
+        Object.assign(host.dataset, {tone, low, high});
+      } else {
+        const {i, q} = symbol;
+        if (!Number.isFinite(i) || !Number.isFinite(q)) return;
+        trail.push([i, q]);
+        if (trail.length > historyLimit) trail.shift();
+        layer.innerHTML = trail.map(([a, b], n) => {
+          const latest = n === trail.length - 1;
+          const attr = latest ? 'class="current-point" r="5"' :
+            `class="point-trail" r="3.4" opacity="${.20 + .55 * n / historyLimit}"`;
+          return `<circle ${attr} cx="${x(a)}" cy="${y(b)}"/>`;
+        }).join('');
+        valueLabel.textContent = `I ${number.format(i)} · Q ${number.format(q)}`;
+        Object.assign(host.dataset, {i, q});
+      }
+      if (Number.isFinite(symbol.sample)) host.dataset.sample = symbol.sample;
+      host.dataset.state = 'active';
+      host.dataset.count = String(Number(host.dataset.count) + 1);
+      statusLabel.textContent = rx ? 'Dernier symbole mesuré' : 'Dernier symbole transmis';
+    }
+    return {setProfile, clear, show, waiting};
+  }
+
+  globalThis.FM_SYMBOL_MONITOR = Object.freeze({create});
+})();
+</script>
+<script>
+'use strict';
+(() => {
+  const $=id=>document.getElementById(id);
+  const RATE=120000, BAUD=1500000, FRAME_BYTES=138, FRAME_SAMPLES=128, DSP_BATCH=4096;
+  const fmt=new Intl.NumberFormat('fr-CA',{maximumFractionDigits:1}).format;
+  const mhzFormat=new Intl.NumberFormat('fr-CA',{minimumFractionDigits:3,maximumFractionDigits:6}).format;
+  const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  const crcTable=Uint16Array.from({length:256},(_,value)=>{
+    let crc=value<<8;
+    for(let bit=0;bit<8;bit++) crc=((crc<<1)^(crc&0x8000?0x1021:0))&0xffff;
+    return crc;
+  });
+  function crc16(bytes,start=0,end=bytes.length) {
+    let crc=0xffff;
+    for(let index=start;index<end;index++) crc=((crc<<8)^crcTable[((crc>>8)^bytes[index])&255])&0xffff;
+    return crc;
+  }
+  class FrameParser {
+    constructor({onFrame,onLine,onError}) {
+      Object.assign(this,{onFrame,onLine,onError}); this.tail=new Uint8Array(0); this.line='';
+    }
+    ascii(byte) {
+      if(byte===10) {
+        const line=this.line.trim(); this.line='';
+        if(/^(?:OK (?:START|STATUS)\s|ERR(?:\s|$)|END\s+samples=\d+\b)/.test(line)) this.onLine(line);
+      } else if(byte>=32&&byte<=126) this.line=(this.line+String.fromCharCode(byte)).slice(-240);
+      else if(byte!==13) this.line='';
+    }
+    feed(bytes) {
+      const data=new Uint8Array(this.tail.length+bytes.length);
+      data.set(this.tail); data.set(bytes,this.tail.length);
+      let index=0;
+      while(index<data.length) {
+        if(data[index]!==77) { this.ascii(data[index++]); continue; }
+        if(data.length-index<4) break;
+        if(data[index+1]!==80||data[index+2]!==88||data[index+3]!==49) { this.ascii(data[index++]); continue; }
+        if(data.length-index<FRAME_BYTES) break;
+        if(crc16(data,index+4,index+136)!==(data[index+136]|data[index+137]<<8)) {
+          this.onError(); this.line=''; index++; continue;
+        }
+        const first=(data[index+4]|data[index+5]<<8|data[index+6]<<16|data[index+7]<<24)>>>0;
+        this.line=''; this.onFrame(first,new Int8Array(data.buffer,index+8,FRAME_SAMPLES));
+        index+=FRAME_BYTES;
+      }
+      this.tail=data.slice(index);
+    }
+  }
+
+  function decoderWorker() {
+    let receiver=null, file=null, verification=null, verified=false;
+    function onFrame(packet) {
+      self.postMessage({type:'packet'});
+      if(verification) return;
+      const result=file.push(packet);
+      if(!result.accepted) return;
+      self.postMessage({type:'progress',progress:result.progress});
+      if(result.complete) {
+        verification=file.finish().then(result=>{
+          verified=result.ok;
+          if(!result.ok) { self.postMessage({type:'failed',reason:result.reason}); return; }
+          const bytes=result.data.slice();
+          self.postMessage({type:'file',name:result.name,sha256:result.sha256,bytes},[bytes.buffer]);
+        }).catch(error=>self.postMessage({type:'failed',reason:error.message}));
+      }
+    }
+    self.onmessage=async ({data})=>{
+      try {
+        if(data.type==='init') {
+          const {FM_FILE_PROTOCOL:protocol,FM_FILE_DSP:dsp}=self;
+          if(!protocol||!dsp) throw Error('Modules du modem indisponibles.');
+          file=new protocol.FileReceiver();
+          receiver=new dsp.Receiver({profile:data.profile,onFrame,
+            onSymbol:symbol=>self.postMessage({type:'symbol',symbol}),
+            onStats:stats=>self.postMessage({type:'stats',stats})});
+        } else if(data.type==='mpx') {
+          try { receiver.push(data.samples,data.index); }
+          finally { self.postMessage({type:'ack'}); }
+        } else if(data.type==='seal') {
+          await verification;
+          self.postMessage({type:'sealed',verified,progress:file?.progress()});
+        }
+      } catch(error) { self.postMessage({type:'error',message:error.message}); }
+    };
+  }
+  const monitorSource=`
+    class AnalogMonitor extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.mask=32767; this.ring=new Float32Array(this.mask+1);
+        this.reset(24000);
+        this.port.onmessage=({data})=>{
+          if(data.type==='reset') this.reset(data.inputRate);
+          else if(data.type==='audio') {
+            for(const sample of data.samples) this.ring[this.writeAt++&this.mask]=sample;
+            if(this.writeAt-this.readAt>this.inputRate*.25) this.readAt=this.writeAt-this.inputRate*.075;
+          }
+        };
+      }
+      reset(inputRate) { this.inputRate=inputRate; this.writeAt=this.readAt=0; this.running=false; this.drift=this.gain=0; }
+      process(inputs,outputs) {
+        const out=outputs[0][0], queued=this.writeAt-this.readAt;
+        if(!this.running&&queued>=this.inputRate*.06) this.running=true;
+        this.drift+=(Math.max(-.009,Math.min(.009,(queued/this.inputRate-.075)*.096))-this.drift)*.04;
+        const step=this.inputRate/sampleRate*(1+this.drift);
+        for(let n=0;n<out.length;n++) {
+          const index=Math.floor(this.readAt);
+          if(!this.running||index+1>=this.writeAt) {
+            this.running=false; this.gain=0; out[n]=0; continue;
+          }
+          const a=this.ring[index&this.mask], b=this.ring[(index+1)&this.mask];
+          this.gain=Math.min(1,this.gain+.003);
+          out[n]=(a+(b-a)*(this.readAt-index))*this.gain;
+          this.readAt+=step;
+        }
+        return true;
+      }
+    }
+    registerProcessor('fm-file-monitor',AnalogMonitor);
+  `;
+  // Anti-alias filter for the 60 kéch/s monitor stream used by V.BoOm.
+  const wideMonitorTaps=Float64Array.from({length:49},(_,index)=>{
+    const lag=index-24, cutoff=18500/RATE, window=.54-.46*Math.cos(2*Math.PI*index/48);
+    return window*(lag ? Math.sin(2*Math.PI*cutoff*lag)/(Math.PI*lag) : 2*cutoff);
+  });
+  const wideMonitorGain=1/wideMonitorTaps.reduce((sum,tap)=>sum+tap,0);
+  class AnalogTap {
+    constructor(node,wide) {
+      this.node=node; this.decimation=wide?2:5; this.inputRate=RATE/this.decimation;
+      this.history=wide?new Float32Array(64):null; this.reset();
+    }
+    reset() {
+      this.dc=this.lowA=this.lowB=this.phase=this.used=this.firAt=0;
+      this.history?.fill(0);
+      this.buffer=new Float32Array(this.inputRate/50);
+      this.node.port.postMessage({type:'reset',inputRate:this.inputRate});
+    }
+    sample(value) {
+      this.dc+=(value-this.dc)*.00155;
+      if(this.history) this.history[this.firAt++&63]=value-this.dc;
+      else {
+        this.lowA+=(value-this.dc-this.lowA)*.25;
+        this.lowB+=(this.lowA-this.lowB)*.25;
+      }
+      if(++this.phase<this.decimation) return;
+      this.phase=0;
+      let audio=this.lowB;
+      if(this.history) {
+        audio=0;
+        for(let index=0;index<wideMonitorTaps.length;index++) audio+=wideMonitorTaps[index]*this.history[(this.firAt-1-index)&63];
+        audio*=wideMonitorGain;
+      }
+      this.buffer[this.used++]=audio;
+      if(this.used===this.buffer.length) {
+        this.node.port.postMessage({type:'audio',samples:this.buffer},[this.buffer.buffer]);
+        this.buffer=new Float32Array(this.inputRate/50); this.used=0;
+      }
+    }
+    push(samples) { for(const value of samples) this.sample(value===-128?0:value/127); }
+    gap(count) {
+      if(count>RATE*.1) { this.reset(); return; }
+      for(let i=0;i<count;i++) this.sample(0);
+    }
+  }
+  const newCounters=()=>({frames:0,crc:0,missing:0,invalid:0,decoderDrops:0,modemPackets:0});
+  const symbolMonitor=FM_SYMBOL_MONITOR.create($('symbolMonitor'),{direction:'rx'});
+  let state='closed', confirmed=false, port=null, reader=null, readerTask=null, parser=null;
+  let writeTail=Promise.resolve();
+  let token=0, expected=0, position=0, centerHz=null, counters=newCounters(), modemStats={};
+  let decoder=null, fileProgress=null, verified=null, downloadUrl=null;
+  let audioContext=null, audioNode=null, audioGain=null, analog=null;
+  let pendingSymbol=null, displayedSymbol=null, lastSymbolAt=0, symbolTimer=null;
+
+  function report(id,text,error=false) {
+    const el=$(id); el.textContent=text; el.classList.toggle('error',error);
+  }
+  function resetSymbols(message) {
+    clearTimeout(symbolTimer); symbolTimer=null;
+    pendingSymbol=displayedSymbol=null; lastSymbolAt=0;
+    symbolMonitor.clear(message);
+  }
+  function setSymbolProfile(message) {
+    symbolMonitor.setProfile($('mode').value);
+    resetSymbols(message);
+  }
+  function paintSymbol() {
+    symbolTimer=null;
+    if(state!=='radio') return;
+    if(pendingSymbol) {
+      displayedSymbol=pendingSymbol; pendingSymbol=null;
+      lastSymbolAt=performance.now();
+      symbolMonitor.show(displayedSymbol);
+      symbolTimer=setTimeout(paintSymbol,1250);
+    } else {
+      symbolMonitor.waiting('En attente du prochain symbole mesuré.');
+    }
+  }
+  function queueSymbol(symbol) {
+    pendingSymbol=symbol;
+    clearTimeout(symbolTimer);
+    const delay=displayedSymbol?lastSymbolAt+500-performance.now():0;
+    if(delay<=0) paintSymbol();
+    else symbolTimer=setTimeout(paintSymbol,Math.ceil(delay));
+  }
+  function buttons() {
+    $('connect').disabled=state!=='closed';
+    $('close').disabled=!port||state!=='idle';
+    $('start').disabled=state!=='idle'||!confirmed;
+    $('stop').disabled=!['starting','radio'].includes(state);
+    $('frequency').disabled=$('mode').disabled=!['closed','idle'].includes(state);
+  }
+  function volume() {
+    const percent=$('volume').valueAsNumber, muted=$('mute').checked;
+    $('volumeLabel').textContent=fmt(percent)+' %';
+    if(audioGain) audioGain.gain.setTargetAtTime(muted?0:percent/100,audioContext.currentTime,.012);
+  }
+  async function readyAudio(id,profile) {
+    try {
+      if(!audioContext) audioContext=new AudioContext({latencyHint:'interactive'});
+      await audioContext.resume();
+      if(!audioNode) {
+        await audioContext.audioWorklet.addModule('data:text/javascript;charset=utf-8,'+encodeURIComponent(monitorSource));
+        audioNode=new AudioWorkletNode(audioContext,'fm-file-monitor',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[1]});
+        audioGain=audioContext.createGain(); audioNode.connect(audioGain).connect(audioContext.destination);
+      }
+      if(id!==token) return;
+      const wide=profile==='vboom';
+      analog=new AnalogTap(audioNode,wide); volume();
+      report('monitorStatus',wide?'Écoute de la bande audible du signal V.BoOm.':'Écoute de la sortie audio FM.');
+    } catch(error) {
+      if(id===token) report('monitorStatus','Écoute indisponible · '+error.message,true);
+    }
+  }
+  function silence() {
+    analog?.reset(); analog=null; report('monitorStatus','Écoute arrêtée.');
+    resetSymbols('Réception arrêtée.');
+  }
+  function clearDownload() {
+    verified=null;
+    if(downloadUrl) URL.revokeObjectURL(downloadUrl);
+    downloadUrl=null; $('download').hidden=true; $('download').removeAttribute('href'); $('hashLine').hidden=true;
+  }
+  function renderProgress(progress) {
+    fileProgress=progress;
+    $('generations').textContent=progress.active?fmt(progress.decodedGenerations)+' / '+fmt(progress.generations):'—';
+    $('recovered').textContent=fmt(progress.recoveredDataShards);
+    $('fileSize').textContent=progress.active?fmt(progress.size):'—';
+    $('fec').textContent=Number.isFinite(progress.fecPercent)?
+      '+'+fmt(progress.fecPercent)+' % · '+fmt(progress.parityShards)+' de parité':'—';
+    $('progress').value=progress.active?progress.receivedShards/progress.dataShards:0;
+    report('fileStatus',progress.complete?'Vérification de l’empreinte SHA-256…':'Reconstruction du fichier en cours…');
+  }
+  function showDownload(data) {
+    verified={name:data.name,sha256:data.sha256,size:data.bytes.length};
+    downloadUrl=URL.createObjectURL(new Blob([data.bytes],{type:'application/octet-stream'}));
+    const name=data.name.replace(/[\\/]/g,'_');
+    const link=$('download'); link.href=downloadUrl; link.download=name;
+    link.textContent='Télécharger « '+name+' »'; link.hidden=false;
+    $('sha256').textContent=data.sha256; $('hashLine').hidden=false;
+    report('fileStatus','Fichier complet · empreinte SHA-256 vérifiée.');
+  }
+  function closeDecoder() {
+    if(!decoder) return;
+    decoder.worker.terminate(); decoder=null;
+  }
+  function startDecoder(profile) {
+    closeDecoder();
+    const source=$('fmFileProtocolSource').textContent+'\n'+$('fmFileDspSource').textContent+'\n('+decoderWorker.toString()+')();';
+    const url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
+    let worker;
+    try { worker=new Worker(url); } finally { URL.revokeObjectURL(url); }
+    const local={worker,samples:new Int8Array(DSP_BATCH),used:0,index:0,inflight:0,sealing:false,failed:false};
+    decoder=local;
+    function fail(message) {
+      if(decoder!==local) return;
+      closeDecoder(); report('fileStatus','Décodage interrompu · '+message,true);
+      if(state==='radio'||state==='starting') void stopRadio('Le décodeur modem s’est interrompu.',true);
+    }
+    worker.onerror=()=>fail('Le module de réception s’est arrêté.');
+    worker.onmessage=({data})=>{
+      if(decoder!==local) return;
+      if(data.type==='ack') local.inflight--;
+      else if(data.type==='packet') counters.modemPackets++;
+      else if(data.type==='symbol'&&state==='radio') queueSymbol(data.symbol);
+      else if(data.type==='stats') modemStats=data.stats;
+      else if(data.type==='progress') renderProgress(data.progress);
+      else if(data.type==='file') showDownload(data);
+      else if(data.type==='failed') {
+        local.failed=true;
+        report('fileStatus',data.reason==='sha256-mismatch'?'Empreinte SHA-256 incorrecte.':'Échec de la vérification du fichier.',true);
+      } else if(data.type==='sealed') {
+        if(!data.verified&&!local.failed) report('fileStatus',data.progress?.active?'Réception terminée · fichier incomplet.':'Réception terminée · aucune trame valide.',true);
+        closeDecoder();
+      } else if(data.type==='error') fail(data.message);
+    };
+    worker.postMessage({type:'init',profile});
+  }
+  function flushDecoder() {
+    if(!decoder?.used) return;
+    const {worker,samples,used,index}=decoder;
+    if(decoder.inflight>=8) counters.decoderDrops+=used;
+    else {
+      decoder.inflight++;
+      worker.postMessage({type:'mpx',samples:samples.subarray(0,used),index},[samples.buffer]);
+    }
+    decoder.samples=new Int8Array(DSP_BATCH); decoder.used=0;
+  }
+  function tapDecoder(samples,index) {
+    if(!decoder||decoder.sealing) return;
+    if(!decoder.used) decoder.index=index;
+    decoder.samples.set(samples,decoder.used); decoder.used+=samples.length;
+    if(decoder.used===DSP_BATCH) flushDecoder();
+  }
+  function sealDecoder() {
+    if(!decoder||decoder.sealing) return;
+    flushDecoder(); decoder.sealing=true;
+    decoder.worker.postMessage({type:'seal'});
+  }
+  function onFrame(index,samples) {
+    if(state!=='radio') return;
+    const gap=(index-expected)>>>0;
+    if(gap>=0x80000000) return;
+    expected=(index+FRAME_SAMPLES)>>>0;
+    if(gap) {
+      counters.missing+=gap; flushDecoder(); analog?.gap(gap); position+=gap;
+    }
+    counters.frames++;
+    for(const sample of samples) if(sample===-128) counters.invalid++;
+    tapDecoder(samples,position); analog?.push(samples); position+=samples.length;
+  }
+  function onLine(line) {
+    $('deviceMessage').textContent=line;
+    if(/^OK STATUS FMStereoRX\s+\d+\s+160\s+1500000\s+75000$/.test(line)) confirmed=true;
+    const start=line.match(/^OK START\s+(\d+)\s+120000\s+HQ$/);
+    if(start&&state==='starting') {
+      centerHz=Number(start[1]); $('actual').textContent=mhzFormat(centerHz/1e6)+' MHz';
+      expected=position=0; state='radio'; buttons(); report('status','Réception active · recherche de trames modem.');
+    } else if(/^OK START\b/.test(line)&&state==='starting') {
+      void stopRadio('La carte a répondu avec un mode différent de HQ à 120 kéch/s.',true);
+    } else if(/^ERR(?:\s|$)/.test(line)&&state==='starting') {
+      ++token; state='idle'; silence(); closeDecoder(); buttons(); report('status',line,true);
+    } else if(/^END\s+samples=/.test(line)&&['radio','stopping'].includes(state)) {
+      const active=state==='radio';
+      if(active) ++token;
+      state='idle'; silence(); sealDecoder(); buttons();
+      if(active) report('status','Réception arrêtée par la carte.');
+    }
+  }
+  function command(text) {
+    const own=port;
+    const task=writeTail.then(async()=>{
+      if(!own?.writable||port!==own) throw Error('Port RX indisponible.');
+      const writer=own.writable.getWriter();
+      try { await writer.write(new TextEncoder().encode(text)); } finally { writer.releaseLock(); }
+    });
+    writeTail=task.catch(()=>{});
+    return task;
+  }
+  async function readSerial(own) {
+    try {
+      let ended=false;
+      while(port===own&&own.readable&&!ended) {
+        const local=own.readable.getReader(); reader=local;
+        try {
+          while(port===own) {
+            const {value,done}=await local.read();
+            if(done) { ended=true; break; }
+            if(value?.length) parser.feed(value);
+          }
+        } catch(error) { if(port===own&&!own.readable) throw error; }
+        finally { local.releaseLock(); if(reader===local) reader=null; }
+      }
+    } catch(error) { if(port===own) report('status','Lecture RX interrompue · '+error.message,true); }
+    finally {
+      if(port===own) {
+        confirmed=false;
+        if(state!=='opening') {
+          ++token; silence(); sealDecoder(); state='idle'; buttons();
+          report('status','Liaison RX interrompue. Ferme puis rouvre le port.',true);
+        }
+      }
+    }
+  }
+  async function disconnect() {
+    const own=port;
+    state='closing'; port=null; confirmed=false; buttons();
+    try {
+      if(reader) await reader.cancel().catch(()=>{});
+      if(readerTask) await readerTask;
+      await writeTail;
+      if(own) await own.close();
+    } finally { readerTask=null; state='closed'; buttons(); }
+  }
+  async function connect() {
+    if(!navigator.serial) { report('status','Web Serial indisponible. Utilise Chrome ou Edge.',true); return; }
+    state='opening'; buttons();
+    try {
+      const own=await navigator.serial.requestPort();
+      await own.open({baudRate:BAUD,dataBits:8,stopBits:2,parity:'none',flowControl:'none',bufferSize:65536});
+      port=own; parser=new FrameParser({onFrame,onLine,onError:()=>{if(state==='radio') counters.crc++;}});
+      readerTask=readSerial(own); report('status','Vérification de la carte RX…'); await delay(650);
+      for(let attempt=0;attempt<2&&!confirmed;attempt++) { await command('STATUS\n'); await delay(250); }
+      if(!confirmed&&own.setSignals) {
+        try {
+          await own.setSignals({dataTerminalReady:false,requestToSend:true}); await delay(120);
+          await own.setSignals({dataTerminalReady:false,requestToSend:false}); await delay(850);
+          await command('STATUS\n'); await delay(300);
+        } catch (_) {}
+      }
+      if(!confirmed) throw Error('Carte FMStereoRX non confirmée à 1,5 Mbaud, 8N2.');
+      state='idle'; report('status','Carte RX prête.');
+    } catch(error) {
+      if(port) { try { await disconnect(); } catch (_) {} }
+      state='closed';
+      report('status',error.name==='NotFoundError'?'Aucun port sélectionné.':error.message,error.name!=='NotFoundError');
+    }
+    buttons();
+  }
+  async function startRadio() {
+    if(state!=='idle'||!confirmed) return;
+    const mhz=Number($('frequency').value.trim().replace(',','.'));
+    if(!Number.isFinite(mhz)||mhz<2400||mhz>2483.5) { report('status','Entre une fréquence entre 2400 et 2483,5 MHz.',true); return; }
+    const id=++token;
+    state='starting'; counters=newCounters(); modemStats={}; fileProgress=null; centerHz=null;
+    $('actual').textContent=$('generations').textContent=$('fileSize').textContent=$('fec').textContent='—';
+    $('recovered').textContent='0'; $('progress').value=0; clearDownload(); buttons();
+    report('fileStatus','En attente d’une trame valide.'); report('status','Accord de la carte RX…');
+    resetSymbols('Recherche de symboles dans le signal reçu…');
+    try {
+      const profile=$('mode').value;
+      startDecoder(profile); void readyAudio(id,profile);
+      await command('START '+Math.round(mhz*1000)+' HQ\n');
+      setTimeout(()=>{ if(id===token&&state==='starting') void stopRadio('La carte RX n’a pas confirmé le démarrage.',true); },2600);
+    } catch(error) {
+      if(id===token) { ++token; state='idle'; silence(); closeDecoder(); buttons(); report('status',error.message,true); }
+    }
+  }
+  async function stopRadio(message='Réception arrêtée.',error=false) {
+    if(!['starting','radio'].includes(state)) return;
+    const id=++token;
+    state='stopping'; silence(); sealDecoder(); buttons(); report('status',message,error);
+    try { await command('!\n'); }
+    catch(err) { report('status','Arrêt série · '+err.message,true); }
+    setTimeout(()=>{ if(id===token&&state==='stopping') { state='idle'; buttons(); } },350);
+  }
+  $('connect').onclick=connect;
+  $('start').onclick=startRadio;
+  $('stop').onclick=()=>stopRadio();
+  $('close').onclick=async()=>{ try { await disconnect(); report('status','Port fermé.'); }
+    catch(error) { report('status','Fermeture du port · '+error.message,true); } };
+  $('volume').oninput=volume; $('mute').onchange=volume;
+  $('mode').onchange=()=>setSymbolProfile('En attente de réception.');
+  setSymbolProfile('En attente de réception.');
+  setInterval(()=>{
+    for(const key of Object.keys(counters)) $(key).textContent=fmt(counters[key]);
+    const rejected=modemStats.crcFailures;
+    $('modemRejected').textContent=Number.isFinite(rejected)?fmt(rejected):'—';
+  },125);
+  globalThis.FMFileModemRX={FrameParser,crc16,stats:()=>({state,centerHz,transport:{...counters},modem:{...modemStats},
+    progress:fileProgress,verified,monitor:!!analog,muted:$('mute').checked,symbol:displayedSymbol})};
+  buttons();
+})();
+</script>
+</html>
