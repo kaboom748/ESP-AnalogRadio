@@ -312,7 +312,7 @@ One startup capture showed roughly **3.94 kHz peak-to-peak drift** over **16.76 
 
 </details>
 
-- **Project** — Guillaume / [kaboom748](https://github.com/kaboom748).
+- **Project**  [kaboom748](https://github.com/kaboom748).
 - **RF techniques and reference code** — SP8ESA's MIT-licensed [ESP8266 2.4 GHz SSB transceiver](https://github.com/SP8ESA/ESP8266_2.4GHz_SSB_TRX).
 - **Wi-Fi RF handoff** — The PM1/PM0 approach in the Wi-Fi-only sketches builds on [ESPBoOm8266](https://github.com/kaboom748/ESPBoOm8266).
 - **License** — [GNU General Public License v3](LICENSE). See the notices in the individual sketches for upstream attribution.
