@@ -1,3 +1,5 @@
+ESPHOME and ARDUINO compatible
+
 <img width="1726" height="988" alt="Capture d’écran 2026-11-08 194242" src="https://github.com/user-attachments/assets/201e30fe-d0d3-4f8b-a226-26cd193d348b" />
 # C.B. FM Stereo
 
