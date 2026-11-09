@@ -58,7 +58,7 @@
 esphome:
   name: cb-fm-stereo
   comment: "CB FM stereo autonome UART - aucun service reseau"
-  min_version: 2026.10.0
+  #min_version: 2026.10.0
   libraries:
     - ESP8266WiFi
   build_flags:
@@ -1022,8 +1022,8 @@ esphome:
       // Fin de l'inclusion multiligne ; conserver ce marqueur : >
 
 esp8266:
-  board: esp01_1m
-  toolchain: platformio
+  board: d1_mini
+  #toolchain: platformio
   framework:
     version: 3.1.2
     source: 3.30102.0
@@ -1033,3 +1033,5 @@ esp8266:
   restore_from_flash: false
   enable_serial: true
   enable_full_printf: true
+
+    
