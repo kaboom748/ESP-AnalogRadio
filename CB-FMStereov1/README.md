@@ -1,3 +1,4 @@
+<img width="1726" height="988" alt="Capture d’écran 2026-11-08 194242" src="https://github.com/user-attachments/assets/201e30fe-d0d3-4f8b-a226-26cd193d348b" />
 # C.B. FM Stereo
 
 C.B. FM Stereo is a two-station, half-duplex radio for ESP8266EX boards. Each station uses a browser for its microphone, speaker, and controls, and an ESP8266 for the 2.4 GHz FM radio link. Press and hold to transmit. Release to listen. Both stations use the same firmware and standalone HTML file.
