@@ -1,0 +1,938 @@
+/*
+  C.B. FM stéréo pour deux ESP8266EX à 160 MHz, Arduino ESP8266 core 3.1.2.
+  Base TX : ESP-AnalogRadio / FMStereoHQv3. Base RX : FMStereoRX.
+  Le réglage PHY et l'estimateur I/Q réutilisent les travaux de SP8ESA.
+  https://github.com/SP8ESA/ESP8266_2.4GHz_SSB_TRX
+
+  MIT License
+
+  Copyright (c) 2026 SP8ESA
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+*/
+#include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <stdlib.h>
+#include <string.h>
+extern "C" {
+#include "user_interface.h"
+void set_rf_freq_offset(int xtal, int mhz, int off);
+extern uint8_t chip6_phy_init_ctrl[];
+}
+
+namespace {
+constexpr uint32_t cpuHz = 160000000;
+constexpr uint32_t baud = 2000000;
+constexpr uint32_t FM_FS = 120000;
+constexpr uint32_t RAM_SIZE = 16384;
+constexpr uint32_t RING_MASK = RAM_SIZE - 1;
+constexpr uint32_t START_LEVEL = 4096;
+static_assert((RAM_SIZE & RING_MASK) == 0, "La taille du tampon doit etre une puissance de deux");
+static_assert(START_LEVEL < RAM_SIZE, "Seuil de demarrage TX invalide");
+constexpr uint32_t UART_TIMEOUT_MS = 150;
+constexpr uint32_t TX_ARM_TIMEOUT_MS = 1200;
+constexpr uint32_t TX_FAULT_DRAIN_MS = 120;
+constexpr uint32_t READY_REPEAT_MS = 25;
+constexpr uint8_t cmdPtt = 0xa5;
+constexpr uint8_t streamReady = 0xef;
+// APWR : 0 = émission maximale, 191 = émission minimale.
+constexpr uint8_t maxApwr = 191;
+uint8_t currentApwr = 63;
+constexpr int32_t deviationHz = 50000;
+constexpr int32_t FM_K_OFFSET_STEPS = 4;
+constexpr int32_t toneOffsetHz = FM_K_OFFSET_STEPS * 78125;
+constexpr uint32_t defaultFrequencyHz = 2442312500UL;
+constexpr uint32_t minFrequencyHz = 2401000000UL;
+constexpr uint32_t maxFrequencyHz = 2482500000UL;
+constexpr int32_t maxRxFineHz = 50000;
+
+// Le générateur FM et le récepteur se partagent l'UART et la radio.
+static constexpr uint32_t UART_FIFO=0x60000000u;
+static constexpr uint32_t UART_INT_RAW=0x60000004u;
+static constexpr uint32_t UART_INT_ENA=0x6000000Cu;
+static constexpr uint32_t UART_INT_CLR=0x60000010u;
+static constexpr uint32_t UART_STATUS=0x6000001Cu;
+static constexpr uint32_t UART_CONF0=0x60000020u;
+static constexpr uint32_t UART_RX_OVERFLOW_RAW=(1u<<4);
+static constexpr uint32_t UART_RX_FRAME_RAW=(1u<<3);
+static constexpr uint32_t UART_RX_PARITY_RAW=(1u<<2);
+
+// Registres RF du moteur B2, sans Wi-Fi associe.
+static constexpr uint32_t TONE1=0x600005B8u;
+static constexpr uint32_t TONE2=0x600005BCu;
+static constexpr uint32_t TONE3=0x600005C4u;
+static constexpr uint32_t PBUS_CMD=0x60000594u;
+static constexpr uint32_t PBUS_STAT=0x600005A0u;
+static constexpr uint32_t RX_CTRL=0x60009B08u;
+static constexpr uint32_t K_MASK=0x000003FFu;
+static constexpr uint32_t SCALE_MASK=0x0003FC00u;
+static constexpr uint32_t GATE_MASK=0x00040000u;
+static constexpr uint32_t SCALE_SHIFT=10u;
+static constexpr uint32_t RX_STOP=0x08000000u;
+static constexpr uint32_t MAC_INT_ENA=0x3FF20C18u;
+using SetTxClkFn=void(*)(int);
+using SetAnaScaleFn=uint8_t(*)(uint8_t);
+static SetTxClkFn set_txclk=reinterpret_cast<SetTxClkFn>(0x4000650Cu);
+static SetAnaScaleFn set_ana_scale=reinterpret_cast<SetAnaScaleFn>(0x4000678Cu);
+
+static inline void memw(){__asm__ volatile("memw" ::: "memory");}
+static inline uint32_t rd32(uint32_t addr){return *reinterpret_cast<volatile uint32_t*>(addr);}
+static inline void wr32(uint32_t addr,uint32_t val){*reinterpret_cast<volatile uint32_t*>(addr)=val;}
+static inline uint32_t IRAM_ATTR cyc(){uint32_t c;__asm__ volatile("rsr %0,ccount":"=a"(c));return c;}
+static inline uint8_t fifoCount(){return uint8_t(rd32(UART_STATUS)&0xffu);}
+static inline uint8_t txCount(){return uint8_t((rd32(UART_STATUS)>>16)&0xffu);}
+static inline bool uartSend(uint8_t b){
+  if(txCount()>=127u)return false; // jamais attendre la TX ni le PC
+  wr32(UART_FIFO,b);return true;
+}
+static inline void uartFlushRx(){
+  uint32_t conf=rd32(UART_CONF0);wr32(UART_CONF0,conf|(1u<<17));
+  wr32(UART_CONF0,conf&~(1u<<17));
+  wr32(UART_INT_CLR,0x1ffu);memw();
+}
+// Le core Arduino ESP8266 installe une ISR et un buffer RX avec Serial.begin().
+// On conserve cette ISR UNIQUEMENT pendant les commandes; en STREAM on lit
+// directement les octets disponibles dans la FIFO. Aucun Serial.* en STREAM.
+static uint32_t commandIrqMask=0u;
+static bool uartStreaming=false;
+static void uartInit(){
+  Serial.begin(baud, SERIAL_8N1);
+  Serial.setDebugOutput(false); // Ne jamais melanger logs texte et protocole binaire.
+  Serial.flush();
+  commandIrqMask=rd32(UART_INT_ENA); // Masque installe par le core Arduino.
+}
+static void uartEnterStream(){
+  // Le navigateur attend READY avant d’envoyer les échantillons.
+  while(Serial.available()>0) (void)Serial.read();
+  const uint32_t ps=xt_rsil(15);
+  commandIrqMask=rd32(UART_INT_ENA);
+  wr32(UART_INT_ENA,0u);  // Desactive UNIQUEMENT les sources UART.
+  uartFlushRx();          // FIFO reinitialisee, sans toucher aux RX de Timer1.
+  uartStreaming=true;
+  xt_wsr_ps(ps);memw();
+}
+static void uartReturnCommands(){
+  if(!uartStreaming)return;
+  const uint32_t ps=xt_rsil(15);
+  wr32(UART_INT_ENA,0u);
+  uartFlushRx();          // Elimine les octets audio residuels.
+  // Handler Arduino toujours installe: retablir ses IRQ RX sans Serial.begin().
+  wr32(UART_INT_ENA,commandIrqMask);
+  uartStreaming=false;
+  xt_wsr_ps(ps);memw();
+}
+static constexpr uint16_t baseK=FM_K_OFFSET_STEPS;
+static constexpr int32_t carrierQ16=FM_K_OFFSET_STEPS*65536L;
+struct RfRegisters {
+  uint32_t tone1,tone2,tone3,pbusCmd,rxCtrl;
+  uint16_t pbus2,pbus7,pbus1,pbus6;
+};
+static RfRegisters savedRf;
+static bool rfOwned=false;
+static inline void gateOff(){wr32(TONE1,rd32(TONE1)&~GATE_MASK);memw();}
+static bool pbusWrite(uint8_t sel,uint8_t bank,uint16_t value){
+  uint32_t cmd=rd32(PBUS_CMD);
+  cmd=(cmd&0xFFFF0001u)|((uint32_t(bank)&3u)<<14)|((uint32_t(value)&0x1ffu)<<5)|((uint32_t(sel)&7u)<<2)|2u;
+  wr32(PBUS_CMD,cmd);memw();
+  const uint32_t start=micros();
+  bool ok=true;
+  while(rd32(PBUS_STAT)&0x80000000u){
+    if(uint32_t(micros()-start)>2500u){ok=false;break;}
+    delay(0);
+  }
+  wr32(PBUS_CMD,rd32(PBUS_CMD)&~2u);memw();return ok;
+}
+static void enterManual(){wr32(RX_CTRL,rd32(RX_CTRL)|RX_STOP);memw();wr32(PBUS_CMD,rd32(PBUS_CMD)|1u);memw();}
+static bool txPathOn(){return pbusWrite(2,1,1)&&pbusWrite(7,1,95)&&pbusWrite(1,1,127)&&pbusWrite(6,1,127);}
+static uint16_t pbusRead(uint8_t sel,uint8_t bank){
+  using ReadFn=uint32_t(*)(uint32_t,uint32_t);
+  return uint16_t(reinterpret_cast<ReadFn>(0x400074D8u)(sel,bank)&0x1ffu);
+}
+static void saveRfState(){
+  savedRf={rd32(TONE1),rd32(TONE2),rd32(TONE3),rd32(PBUS_CMD),rd32(RX_CTRL),
+           pbusRead(2,1),pbusRead(7,1),pbusRead(1,1),pbusRead(6,1)};
+  rfOwned=true;
+}
+static bool releaseTxRf(){
+  bool ok=true;
+  if(rfOwned){
+    gateOff();set_txclk(0);
+    wr32(PBUS_CMD,rd32(PBUS_CMD)|1u);memw();
+    ok=pbusWrite(6,1,savedRf.pbus6)&&ok;
+    ok=pbusWrite(1,1,savedRf.pbus1)&&ok;
+    ok=pbusWrite(7,1,savedRf.pbus7)&&ok;
+    ok=pbusWrite(2,1,savedRf.pbus2)&&ok;
+    wr32(TONE1,savedRf.tone1&~GATE_MASK);
+    wr32(TONE2,savedRf.tone2&~GATE_MASK);
+    wr32(TONE3,savedRf.tone3&~GATE_MASK);memw();
+    wr32(RX_CTRL,savedRf.rxCtrl);
+    wr32(PBUS_CMD,savedRf.pbusCmd&~2u);memw();
+    rfOwned=false;
+  }
+  return ok;
+}
+static void toneProgramOff(){
+  uint32_t r=(rd32(TONE1)&~(K_MASK|SCALE_MASK|GATE_MASK))|(uint32_t(baseK)&K_MASK);
+  wr32(TONE1,r);wr32(TONE2,rd32(TONE2)&~GATE_MASK);wr32(TONE3,rd32(TONE3)&~GATE_MASK);memw();
+}
+static uint8_t audioRing[RAM_SIZE];
+static volatile uint32_t head=0,tail=0;
+static volatile bool timerActive=false,timerFinished=false;
+static const char* volatile timerError=nullptr;
+static volatile uint32_t nextDeadline=0,cycleFraction=0;
+static constexpr uint32_t SAMPLE_CYCLES=cpuHz/FM_FS;
+static constexpr uint32_t SAMPLE_REMAINDER=(cpuHz)%FM_FS;
+static constexpr uint32_t TIMER_DIV_CYCLES=2u; // APB a 80 MHz, CPU a 160 MHz, TIM_DIV1
+static constexpr int32_t REARM_GUARD_CYCLES=224;
+static constexpr uint32_t MAX_CATCHUP_SAMPLES=8;
+static inline uint32_t occupancyBytes(){return head-tail;}
+static uint32_t savedMacMask=0;
+static bool macLoan=false;
+
+struct MpxLevel {
+  uint16_t nearestK;
+  int16_t pulseCycles;
+};
+static MpxLevel levels[256];
+static uint32_t rfWord=0,lastTone=0;
+static int32_t phaseDebt=0;
+static constexpr int32_t MIN_PULSE_CYCLES=64;
+static constexpr int32_t TONE_WRITE_CYCLES=32;
+static constexpr int32_t ISR_EXIT_CYCLES=224;
+static constexpr int32_t MAX_PULSE_CYCLES=int32_t(SAMPLE_CYCLES*51u/100u);
+
+static void prepareMpxLevels(){
+  constexpr int64_t denominator=127LL*78125LL;
+  for(uint32_t b=0;b<256u;++b){
+    const int32_t sample=int8_t(b);
+    const int64_t scaled=int64_t(sample)*deviationHz*65536LL;
+    const int32_t q=carrierQ16+int32_t((scaled+(scaled>=0?denominator/2:-denominator/2))/denominator);
+    const int32_t nearest=(q+32768)>>16;
+    const int32_t area=(q-nearest*65536)*int32_t(SAMPLE_CYCLES);
+    levels[b]={uint16_t(uint32_t(nearest)&K_MASK),int16_t((area+(area>=0?32768:-32768))/65536)};
+  }
+}
+
+static void IRAM_ATTR emitMpx(uint8_t sample,uint32_t deadline){
+  const MpxLevel level=levels[sample];
+  const uint32_t baseline=rfWord|level.nearestK;
+  if(lastTone!=baseline){
+    wr32(TONE1,baseline);memw();
+    lastTone=baseline;
+  }
+
+  // Une impulsion centree vers le pas voisin interpole le registre RF de
+  // pas 78 125 Hz. Reporter l'erreur d'aire mesuree au tick suivant.
+  int32_t area=int32_t(level.pulseCycles)+phaseDebt;
+  const bool up=area>=0;
+  int32_t width=up?area:-area;
+  if(width>=MIN_PULSE_CYCLES){
+    if(width>MAX_PULSE_CYCLES)width=MAX_PULSE_CYCLES;
+    const uint32_t start=deadline-(SAMPLE_CYCLES+uint32_t(width))/2u;
+    while(int32_t(cyc()-start)<0){}
+    const int32_t room=int32_t(deadline-cyc())-ISR_EXIT_CYCLES-TONE_WRITE_CYCLES;
+    if(width>room)width=room;
+    if(width>=MIN_PULSE_CYCLES){
+      const uint32_t neighbor=(uint32_t(level.nearestK)+(up?1u:K_MASK))&K_MASK;
+      wr32(TONE1,rfWord|neighbor);memw();
+      const uint32_t pulseStart=cyc();
+      const uint32_t stop=pulseStart+uint32_t(width-TONE_WRITE_CYCLES);
+      while(int32_t(cyc()-stop)<0){}
+      wr32(TONE1,baseline);memw();
+      const int32_t actual=int32_t(cyc()-pulseStart);
+      area+=up?-actual:actual;
+    }
+  }
+  phaseDebt=constrain(area,-int32_t(SAMPLE_CYCLES),int32_t(SAMPLE_CYCLES));
+}
+
+static inline void IRAM_ATTR silent(){
+  volatile uint32_t* tone=reinterpret_cast<volatile uint32_t*>(TONE1);
+  *tone=(*tone)&~GATE_MASK;__asm__ volatile("memw" ::: "memory");
+}
+static inline void IRAM_ATTR advanceMpxDeadline(){
+  nextDeadline+=SAMPLE_CYCLES;
+  cycleFraction+=SAMPLE_REMAINDER;
+  if(cycleFraction>=FM_FS){++nextDeadline;cycleFraction-=FM_FS;}
+}
+static void IRAM_ATTR tick(){
+  if(!timerActive){silent();timer1_disable();return;}
+  uint32_t consume=1;
+  advanceMpxDeadline();
+  // Un retard isole ne doit pas decaler l'horloge du pilote. Sauter au
+  // bon echantillon au lieu de repartir avec une nouvelle origine de temps.
+  while(int32_t(nextDeadline-cyc())<REARM_GUARD_CYCLES){
+    if(consume>=MAX_CATCHUP_SAMPLES){
+      timerError="TX_TIMING";silent();timerActive=false;timerFinished=true;timer1_disable();return;
+    }
+    ++consume;
+    advanceMpxDeadline();
+  }
+  const uint32_t t=tail;
+  const uint32_t queued=head-t;
+  uint8_t sample=0;
+  // Un manque d'échantillons donne du silence. Le délai UART coupe la porteuse.
+  if(queued>=consume){
+    sample=audioRing[(t+consume-1u)&RING_MASK];
+    tail=t+consume;
+  }
+  // Rearmer avant l'impulsion pour que sa largeur ne change pas la cadence.
+  const int32_t remain=int32_t(nextDeadline-cyc());
+  timer1_write(uint32_t(remain<32?32:remain)/TIMER_DIV_CYCLES);
+  emitMpx(sample,nextDeadline);
+}
+static void startFM(){
+  const uint32_t ps=xt_rsil(15);
+  gateOff();toneProgramOff();
+  lastTone=rd32(TONE1);
+  rfWord=(lastTone&~(K_MASK|SCALE_MASK|GATE_MASK))|GATE_MASK;
+  phaseDebt=0;
+  savedMacMask=rd32(MAC_INT_ENA);wr32(MAC_INT_ENA,0);memw();macLoan=true;
+  timer1_disable();timer1_detachInterrupt();timer1_isr_init();timer1_attachInterrupt(tick);
+  nextDeadline=cyc()+SAMPLE_CYCLES;cycleFraction=0;
+  timerError=nullptr;timerFinished=false;timerActive=true;
+  timer1_enable(TIM_DIV1,TIM_EDGE,TIM_SINGLE);
+  timer1_write(SAMPLE_CYCLES/TIMER_DIV_CYCLES);
+  xt_wsr_ps(ps);memw();
+}
+static void stopFM(){
+  const uint32_t ps=xt_rsil(15);
+  timerActive=false;timer1_disable();timer1_detachInterrupt();
+  timerFinished=false;timerError=nullptr;
+  silent();
+  if(macLoan){wr32(MAC_INT_ENA,savedMacMask);memw();macLoan=false;}
+  xt_wsr_ps(ps);memw();
+}
+
+constexpr uint32_t iqCtrl = 0x6000057Cu;
+constexpr uint32_t iqSumI = 0x600005DCu;
+constexpr uint32_t iqSumQ = 0x600005E0u;
+constexpr uint32_t iqMask = 0xFFFA0001u;
+constexpr uint32_t iqDone = 0x80000000u;
+constexpr uint8_t frameCount = 8;
+constexpr uint16_t payloadSize = 128;
+constexpr uint16_t headerSize = 4 + 4 + 2;
+constexpr uint16_t frameSize = headerSize + payloadSize;
+constexpr uint32_t deviationFullScaleHz = 75000;
+
+const int16_t robustTaps[] = {0, 22, 7, -66, -40, 140, 127, -239, -314, 353, 681, -459, -1496, 535, 5128, 7626};
+const int16_t monoTaps[] = {3, -2, -21, -57, -106, -151, -167, -120, 21, 275, 637, 1074, 1528, 1927, 2201, 2300};
+
+struct Profile {
+  const char* name;
+  uint32_t iqRate;
+  uint32_t audioRate;
+  const int16_t* taps;
+  uint8_t halfTaps;
+  uint8_t decimation;
+};
+
+const Profile profiles[] = {
+  {"HQ", 240000, 120000, nullptr, 9, 2},
+  {"ROBUST", 192000, 96000, robustTaps, sizeof(robustTaps) / sizeof(int16_t) - 1, 2},
+  {"MONO", 192000, 48000, monoTaps, sizeof(monoTaps) / sizeof(int16_t) - 1, 4},
+};
+
+struct Stats {
+  uint32_t captured;
+  uint32_t skipped;
+  uint32_t timeouts;
+  uint32_t samples;
+  uint32_t sent;
+  uint32_t invalid;
+  uint32_t queueDrops;
+  uint32_t maxLate;
+};
+
+uint8_t frames[frameCount][frameSize];
+uint16_t angles[257];
+uint32_t reciprocals[256];
+int32_t filterHistory[256];
+
+static inline __attribute__((always_inline)) uint32_t cycles() {
+  uint32_t result;
+  asm volatile("rsr %0, ccount" : "=a"(result));
+  return result;
+}
+
+static inline __attribute__((always_inline)) uint32_t readRegister(uint32_t address) {
+  return *reinterpret_cast<volatile uint32_t*>(address);
+}
+
+static inline __attribute__((always_inline)) void writeRegister(uint32_t address, uint32_t value) {
+  *reinterpret_cast<volatile uint32_t*>(address) = value;
+}
+
+static inline __attribute__((always_inline)) void pushHistory(
+    int32_t value, uint8_t& index, uint8_t& count, uint8_t taps) {
+  index = (index + 1) & 127;
+  filterHistory[index] = value;
+  filterHistory[index + 128] = value;
+  if (count < taps) ++count;
+}
+
+// 19-tap halfband at 240 kS/s. Except for the center, every second tap is
+// zero. Writing the five symmetric pairs directly avoids loop overhead.
+static inline __attribute__((always_inline)) int32_t filterHq(const int32_t* newest) {
+  return 78 * (newest[0] + newest[-18])
+       - 265 * (newest[-2] + newest[-16])
+       + 640 * (newest[-4] + newest[-14])
+       - 1467 * (newest[-6] + newest[-12])
+       + 5110 * (newest[-8] + newest[-10])
+       + 8192 * newest[-9];
+}
+
+// 0x80 is reserved for an unavailable MPX sample. It is carried in the same
+// timeline as ordinary samples, even when a frame straddles a radio gap.
+static inline __attribute__((always_inline)) void appendFrame(
+    uint32_t index, uint8_t sample, uint16_t signal, uint8_t readFrame, uint8_t& writeFrame,
+    uint16_t& fill, Stats& stats) {
+  if (sample == 0x80) ++stats.invalid;
+  const uint8_t next = (writeFrame + 1) & (frameCount - 1);
+  if (!fill && next == readFrame) {
+    ++stats.queueDrops;
+    return;
+  }
+  auto* frame = frames[writeFrame];
+  if (!fill) {
+    frame[0] = 'M';
+    frame[1] = 'P';
+    frame[2] = 'X';
+    frame[3] = '3';
+    for (uint8_t byte = 0; byte < 4; ++byte) {
+      frame[4 + byte] = index >> (8 * byte);
+    }
+    frame[8] = signal;
+    frame[9] = signal >> 8;
+  }
+  frame[headerSize + fill] = sample;
+  if (++fill == payloadSize) {
+    writeFrame = next;
+    fill = 0;
+  }
+}
+
+static void prepareTables() {
+  for (uint32_t i = 0; i < 256; ++i) {
+    reciprocals[i] = (1u << 24) / (256 + i);
+  }
+  for (uint32_t i = 0; i <= 256; ++i) {
+    angles[i] = static_cast<uint16_t>(atanf(i * (1.0f / 256.0f)) * (32768.0f / PI) + 0.5f);
+  }
+}
+
+// Conjugate-product phase. The lookup tables avoid floating point and division
+// on the acquisition path. One turn equals 65536 phase units.
+static inline __attribute__((always_inline)) int32_t discriminate(int32_t i, int32_t q, int32_t pi, int32_t pq) {
+  const int32_t dot = i * pi + q * pq;
+  const int32_t cross = q * pi - i * pq;
+  const uint32_t a = dot < 0 ? -dot : dot;
+  const uint32_t b = cross < 0 ? -cross : cross;
+  const uint32_t large = a >= b ? a : b;
+  if (!large) return 0;
+  const uint32_t small = a >= b ? b : a;
+  const uint32_t shift = __builtin_clz(large);
+  const uint32_t normalized = large << shift;
+  const uint32_t ratio = (((small << shift) >> 16) * reciprocals[(normalized >> 23) - 256]) >> 23;
+  int32_t angle = angles[ratio > 256 ? 256 : ratio];
+  if (b > a) angle = 16384 - angle;
+  if (dot < 0) angle = 32768 - angle;
+  return cross < 0 ? -angle : angle;
+}
+
+// All hot functions run from IRAM or inline into this loop. The estimator
+// captures the next I/Q window while the CPU processes the previous one.
+static void IRAM_ATTR runReceiver(const Profile& profile, Stats& stats) {
+  const uint32_t period = cpuHz / profile.iqRate;
+  const uint32_t remainder = cpuHz % profile.iqRate;
+  const int32_t scale = (128u * profile.iqRate + deviationFullScaleHz / 2) / deviationFullScaleHz;
+  const uint32_t cadence = profile.iqRate;
+  const uint8_t decimation = profile.decimation;
+  const uint8_t half = profile.halfTaps;
+  const uint8_t taps = half * 2 + 1;
+  const int16_t* coefficients = profile.taps;
+  const bool halfband = coefficients == nullptr;
+  uint32_t fractional = 0;
+  uint32_t deadline = cycles() + 160;
+  uint32_t sampleIndex = 0;
+  uint32_t priorIndex = 0;
+  uint8_t phase = 0;
+  uint8_t writeFrame = 0, readFrame = 0;
+  uint16_t fill = 0, send = 0;
+  uint8_t history = 0, historyValid = 0;
+  int32_t i = 0, q = 0, oldI = 0, oldQ = 0;
+  int32_t dcI = 0, dcQ = 0, frequencyDc = 0;
+  int32_t lastMpx = 0;
+  int32_t signalQ4 = 0;
+  bool haveSlot = false, badGroup = false;
+  bool previous = false, previousOutput = false, phaseValid = false;
+  uint32_t watchdog = 0;
+  uint32_t maxLate = 0;
+
+  writeRegister(iqCtrl, readRegister(iqCtrl) | 1u);
+  const uint32_t estimator = (readRegister(iqCtrl) & (iqMask & ~iqDone)) | (31u << 2) | 1u;
+
+  while (!((USS(0) >> USRXC) & 0xff)) {
+    while (static_cast<int32_t>(cycles() - deadline) < 0) {}
+    uint32_t now = cycles();
+    if (static_cast<int32_t>(now - deadline) > static_cast<int32_t>(period / 3)) {
+      if (haveSlot) pushHistory(lastMpx, history, historyValid, taps);
+      if (previousOutput) {
+        appendFrame(priorIndex, 0x80, signalQ4 >> 4, readFrame, writeFrame, fill, stats);
+        previousOutput = false;
+      }
+      do {
+        ++stats.skipped;
+        pushHistory(lastMpx, history, historyValid, taps);
+        if (++phase == decimation) {
+          phase = 0;
+          appendFrame(sampleIndex++, 0x80, signalQ4 >> 4, readFrame, writeFrame, fill, stats);
+        }
+        deadline += period;
+        fractional += remainder;
+        if (fractional >= cadence) {
+          fractional -= cadence;
+          ++deadline;
+        }
+      } while (static_cast<int32_t>(now - deadline) >= 0);
+      haveSlot = false;
+      badGroup = true;
+      phaseValid = false;
+      continue;
+    }
+    uint32_t late = now - deadline;
+    if (late > maxLate) maxLate = late;
+
+    writeRegister(iqCtrl, estimator | 2u);
+    if (haveSlot) {
+      if (phase == 1) {
+        badGroup = false;
+      }
+      if (previous) {
+        dcI += (i * 65536 - dcI) >> 12;
+        dcQ += (q * 65536 - dcQ) >> 12;
+        const int32_t ci = i - (dcI >> 16);
+        const int32_t cq = q - (dcQ >> 16);
+        if (previousOutput && (priorIndex & 7u) == 0) {
+          const int32_t magnitude = abs(ci) + abs(cq);
+          signalQ4 += (magnitude > 30000 ? 30000 : magnitude) - (signalQ4 >> 4);
+        }
+        if (phaseValid) {
+          const int32_t value = discriminate(ci, cq, oldI, oldQ);
+          frequencyDc += (value * 4096 - frequencyDc) >> 13;
+          lastMpx = value - (frequencyDc >> 12);
+        } else {
+          badGroup = true;
+        }
+        oldI = ci;
+        oldQ = cq;
+      } else {
+        badGroup = true;
+      }
+      phaseValid = previous;
+      // The FIR sees a held sample through a radio gap; only the affected
+      // decimation groups are tagged invalid on the serial timeline.
+      pushHistory(lastMpx, history, historyValid, taps);
+      if (previousOutput) {
+        uint8_t output = 0x80;
+        if (!badGroup && historyValid == taps) {
+          const int32_t* newest = &filterHistory[history + 128];
+          int32_t filtered;
+          if (halfband) {
+            filtered = filterHq(newest);
+          } else {
+            const int32_t* oldest = newest - (taps - 1);
+            filtered = 0;
+            for (uint8_t tap = 0; tap < half; ++tap) {
+              filtered += coefficients[tap] * (*oldest++ + *newest--);
+            }
+            filtered += coefficients[half] * *newest;
+          }
+          int32_t pcm = ((filtered >> 14) * scale + 32768) >> 16;
+          pcm = pcm < -127 ? -127 : pcm > 127 ? 127 : pcm;
+          output = static_cast<uint8_t>(pcm);
+        }
+        appendFrame(priorIndex, output, signalQ4 >> 4, readFrame, writeFrame, fill, stats);
+      }
+    }
+
+    if (readFrame != writeFrame && ((USS(0) >> USTXC) & 0xff) < 120) {
+      USF(0) = frames[readFrame][send++];
+      if (send == frameSize) {
+        send = 0;
+        readFrame = (readFrame + 1) & (frameCount - 1);
+        stats.sent += payloadSize;
+      }
+    }
+
+    if (++watchdog == 4096) {
+      ESP.wdtFeed();
+      watchdog = 0;
+    }
+
+    while (!(readRegister(iqCtrl) & iqDone) && cycles() - now < period * 3) {}
+    const bool acquired = readRegister(iqCtrl) & iqDone;
+    if (acquired) {
+      // The sums include six fractional bits from the estimator. Keep four
+      // fractional bits after averaging 32 ADC samples.
+      i = static_cast<int32_t>(readRegister(iqSumI)) >> 7;
+      q = static_cast<int32_t>(readRegister(iqSumQ)) >> 7;
+      i = i < -15000 ? -15000 : i > 15000 ? 15000 : i;
+      q = q < -15000 ? -15000 : q > 15000 ? 15000 : q;
+    } else {
+      ++stats.timeouts;
+    }
+    writeRegister(iqCtrl, estimator);
+    haveSlot = true;
+    previous = acquired;
+    previousOutput = ++phase == decimation;
+    if (previousOutput) {
+      phase = 0;
+      priorIndex = sampleIndex++;
+    }
+    deadline += period;
+    fractional += remainder;
+    if (fractional >= cadence) {
+      fractional -= cadence;
+      ++deadline;
+    }
+  }
+
+  writeRegister(iqCtrl, (readRegister(iqCtrl) & iqMask & ~1u) | 0x1000u);
+  // Terminer seulement la trame déjà engagée. La demande PTT coupe le reste du flux.
+  const uint32_t flushStart = cycles();
+  while (send != 0 && cycles() - flushStart < cpuHz / 500) {
+    if (((USS(0) >> USTXC) & 0xff) < 120) {
+      USF(0) = frames[readFrame][send++];
+      if (send == frameSize) {
+        send = 0;
+        readFrame = (readFrame + 1) & (frameCount - 1);
+        stats.sent += payloadSize;
+      }
+    }
+  }
+  stats.samples = sampleIndex;
+  stats.captured = sampleIndex * decimation + phase - stats.skipped - stats.timeouts;
+  stats.maxLate = maxLate;
+}
+
+
+bool phyReady = false;
+bool receiveRequested = false;
+bool transmitting = false;
+bool receivedAudio = false;
+bool streamStarted = false;
+uint32_t frequencyHz = defaultFrequencyHz;
+int32_t rxFineHz = 0;
+const Profile* profile = &profiles[0];
+uint32_t lastAudioAt = 0;
+uint32_t lastReadyAt = 0;
+
+bool startPhy() {
+  if (phyReady) return true;
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(false);
+  wifi_station_set_auto_connect(0);
+  if (!WiFi.mode(WIFI_STA)) return false;
+  wifi_station_set_auto_connect(0);
+  wifi_station_set_reconnect_policy(false);
+  wifi_station_disconnect();
+  if (!wifi_set_sleep_type(NONE_SLEEP_T)) return false;
+  delay(100);
+  phyReady = WiFi.status() != WL_CONNECTED;
+  return phyReady;
+}
+
+void stopPhy() {
+  gateOff();
+  WiFi.mode(WIFI_OFF);
+  phyReady = false;
+}
+
+// Choisir le canal PHY le plus proche, puis régler le PLL à environ 977 Hz.
+uint32_t tune(uint32_t targetHz) {
+  const int64_t channelFromHz = (static_cast<int64_t>(targetHz) - 2407000000LL + 2500000LL) / 5000000LL;
+  const uint8_t channel = channelFromHz < 1 ? 1 : channelFromHz > 13 ? 13 : channelFromHz;
+  const int mhz = 2407 + 5 * channel;
+  const int64_t baseHz = static_cast<int64_t>(mhz) * 1000000;
+  const int64_t deltaHz = targetHz - baseHz;
+  const int32_t offset = (deltaHz * 1024 + (deltaHz < 0 ? -500000 : 500000)) / 1000000;
+  if (!startPhy() || !wifi_set_channel(channel)) return 0;
+  delay(40);
+  if (wifi_get_channel() != channel || WiFi.status() == WL_CONNECTED) return 0;
+  set_rf_freq_offset(chip6_phy_init_ctrl[1], mhz, offset);
+  return baseHz + static_cast<int64_t>(offset) * 1000000 / 1024;
+}
+
+void listen() {
+  const uint32_t lo = tune(static_cast<int64_t>(frequencyHz) + rxFineHz);
+  if (!lo) {
+    receiveRequested = false;
+    stopPhy();
+    Serial.println("ERR RX_RF");
+    return;
+  }
+  Serial.printf("OK RX %lu %lu %s\n", static_cast<unsigned long>(lo),
+                static_cast<unsigned long>(profile->audioRate), profile->name);
+  Serial.flush();
+  Stats stats = {};
+  const uint32_t processorStatus = xt_rsil(15);
+  // L'UART réveille le lecteur de commandes sans consommer le premier octet.
+  runReceiver(*profile, stats);
+  xt_wsr_ps(processorStatus);
+  Serial.flush();
+}
+
+bool prepareTxRf(uint8_t apwr) {
+  // La porte RF reste fermée tant que le tampon audio ne déclenche pas Timer1.
+  if (!tune(frequencyHz - toneOffsetHz)) return false;
+  saveRfState();
+  enterManual();
+  if (!txPathOn()) return false;
+  set_ana_scale(apwr);
+  toneProgramOff();
+  set_txclk(1);
+  return true;
+}
+
+void beginTx(uint8_t requestedApwr) {
+  if (requestedApwr > maxApwr) {
+    Serial.println("ERR TX_APWR");
+    return;
+  }
+  if (!receiveRequested) {
+    Serial.println("ERR SELECT_RX");
+    return;
+  }
+  if (!prepareTxRf(requestedApwr)) {
+    if (!releaseTxRf()) stopPhy();
+    Serial.println("ERR TX_RF");
+    return;
+  }
+  currentApwr = requestedApwr;
+  head = tail = 0;
+  receivedAudio = streamStarted = false;
+  // Une trame tronquée ne doit pas absorber READY dans le lecteur série.
+  static const uint8_t rxBoundary[frameSize] = {};
+  Serial.write(rxBoundary, sizeof(rxBoundary));
+  Serial.flush();
+  uartEnterStream();
+  transmitting = true;
+  lastAudioAt = millis();
+  lastReadyAt = lastAudioAt - READY_REPEAT_MS;
+}
+
+void endTx(const char* error) {
+  stopFM();
+  transmitting = false;
+  if (!releaseTxRf()) {
+    stopPhy();
+    error = "TX_RF";
+  }
+  uartReturnCommands();
+  if (error) {
+    Serial.printf("ERR %s\n", error);
+    // Les derniers octets audio en vol appartiennent à l'ancienne session.
+    const uint32_t drainAt = millis();
+    do {
+      while (Serial.available() > 0) Serial.read();
+      delay(0);
+    } while (millis() - drainAt < TX_FAULT_DRAIN_MS);
+  }
+}
+
+void pollTx() {
+  const uint32_t raw = rd32(UART_INT_RAW);
+  const uint32_t errors = raw & (UART_RX_OVERFLOW_RAW | UART_RX_FRAME_RAW | UART_RX_PARITY_RAW);
+  if (errors) wr32(UART_INT_CLR, errors);
+  if (timerFinished) {
+    endTx(timerError ? timerError : "TX_TIMING");
+    return;
+  }
+
+  const uint32_t now = millis();
+  const uint32_t count = fifoCount();
+  if (count) {
+    receivedAudio = true;
+    lastAudioAt = now;
+  }
+  for (uint32_t n = 0; n < count; ++n) {
+    const uint8_t sample = rd32(UART_FIFO) & 0xffu;
+    const uint32_t position = head;
+    if (position - tail >= RAM_SIZE) continue;
+    audioRing[position & RING_MASK] = sample == 0x80 ? 0 : sample;
+    memw();
+    head = position + 1u;
+  }
+
+  if (!streamStarted && occupancyBytes() >= START_LEVEL) {
+    startFM();
+    streamStarted = true;
+  }
+  if (now - lastAudioAt >= (receivedAudio ? UART_TIMEOUT_MS : TX_ARM_TIMEOUT_MS)) {
+    endTx(nullptr);
+    return;
+  }
+  if (!receivedAudio && now - lastReadyAt >= READY_REPEAT_MS && txCount() <= 123) {
+    for (uint8_t i = 0; i < 4; ++i) uartSend(streamReady);
+    lastReadyAt = now;
+  }
+}
+
+// Valider avant toute conversion en uint8_t : ni signe, ni décimale, ni débordement.
+bool parseApwr(const char* text, uint8_t& value) {
+  if (!text || !*text) return false;
+  uint16_t parsed = 0;
+  for (const char* digit = text; *digit; ++digit) {
+    if (*digit < '0' || *digit > '9') return false;
+    parsed = parsed * 10u + static_cast<uint8_t>(*digit - '0');
+    if (parsed > maxApwr) return false;
+  }
+  value = static_cast<uint8_t>(parsed);
+  return true;
+}
+
+void command(char* line) {
+  const char* name = strtok(line, " \t");
+  if (!name) return;
+  const char* value = strtok(nullptr, " \t");
+  if (!value && strcmp(name, "STATUS") == 0) {
+    if (ESP.getCpuFreqMHz() == 160) Serial.println("OK STATUS CB_FM_STEREO 4");
+    else Serial.println("ERR CPU160");
+    return;
+  }
+  if (!value && strcmp(name, "STOP") == 0) {
+    receiveRequested = false;
+    stopPhy();
+    Serial.println("OK STOP");
+    return;
+  }
+  if (ESP.getCpuFreqMHz() != 160) {
+    Serial.println("ERR CPU160");
+    return;
+  }
+  if (strcmp(name, "TX") == 0) {
+    uint8_t selectedApwr;
+    if (!parseApwr(value, selectedApwr) || strtok(nullptr, " \t")) {
+      Serial.println("ERR TX_APWR");
+      return;
+    }
+    // La consigne et le démarrage sont atomiques pour toutes les sources audio.
+    beginTx(selectedApwr);
+    return;
+  }
+  if (strcmp(name, "RX") != 0 || !value) {
+    Serial.println("ERR COMMAND");
+    return;
+  }
+
+  char* end;
+  uint32_t selected = strtoul(value, &end, 10);
+  if (*value < '0' || *value > '9' || *end) selected = 0;
+  if (selected >= 1 && selected <= 13) selected = (2407UL + 5UL * selected) * 1000000UL + toneOffsetHz;
+  if (selected < minFrequencyHz || selected > maxFrequencyHz) {
+    Serial.println("ERR FREQUENCY");
+    return;
+  }
+
+  const char* mode = strtok(nullptr, " \t");
+  const Profile* selectedProfile = nullptr;
+  for (const auto& candidate : profiles) {
+    if (mode && strcmp(mode, candidate.name) == 0) selectedProfile = &candidate;
+  }
+  if (!selectedProfile) {
+    Serial.println("ERR MODE");
+    return;
+  }
+
+  const char* fine = strtok(nullptr, " \t");
+  const int32_t offset = fine ? strtol(fine, &end, 10) : 0;
+  if ((fine && (*end || end == fine)) || offset < -maxRxFineHz || offset > maxRxFineHz || strtok(nullptr, " \t")) {
+    Serial.println("ERR FINE");
+    return;
+  }
+
+  frequencyHz = selected;
+  rxFineHz = offset;
+  profile = selectedProfile;
+  receiveRequested = true;
+}
+}  // namespace
+
+void setup() {
+  WiFi.persistent(false);
+  wifi_station_set_auto_connect(0);
+  stopPhy();
+  uartInit();
+  prepareTables();
+  prepareMpxLevels();
+}
+
+void loop() {
+  if (transmitting) {
+    static uint32_t lastWatchdogAt = 0;
+    pollTx();
+    const uint32_t now = millis();
+    if (now - lastWatchdogAt >= 10) {
+      ESP.wdtFeed();
+      lastWatchdogAt = now;
+    }
+    return;
+  }
+
+  static char line[48];
+  static uint8_t length = 0;
+  static bool invalid = false;
+  static uint32_t lastInputAt = 0;
+  while (Serial.available() > 0) {
+    const int byte = Serial.read();
+    if (byte == cmdPtt && !length && !invalid) {
+      length = 0;
+      invalid = false;
+      if (ESP.getCpuFreqMHz() == 160) beginTx(currentApwr);
+      else Serial.println("ERR CPU160");
+      return;
+    }
+    lastInputAt = millis();
+    if (byte == '\r') continue;
+    if (byte == '\n') {
+      if (invalid) {
+        Serial.println("ERR COMMAND");
+      } else {
+        line[length] = '\0';
+        command(line);
+      }
+      length = 0;
+      invalid = false;
+      // TX a basculé l'UART en flux : ne plus lire Serial ni relancer listen().
+      if (transmitting) return;
+    } else if ((byte == '\t' || (byte >= 32 && byte <= 126)) && length < sizeof(line) - 1) {
+      line[length++] = byte;
+    } else {
+      invalid = true;
+    }
+  }
+
+  if (length || invalid) {
+    if (millis() - lastInputAt < 120) return;
+    length = 0;
+    invalid = false;
+  }
+  if (receiveRequested) listen();
+}
