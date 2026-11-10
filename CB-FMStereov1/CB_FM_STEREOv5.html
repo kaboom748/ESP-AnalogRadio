@@ -147,6 +147,18 @@
   #cb-easy-settings-body > button { justify-self: start; }
   .cb-easy-setting-note { color: var(--muted); font-size: .86rem; }
 
+  /* Barre du bas : statut à gauche, toggle CONTINUOUS TX à droite */
+  .cb-easy-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem 1.2rem; margin-top: .65rem; padding: .55rem 1rem; border: 1px solid var(--line); border-radius: .75rem; background: #0e1319; }
+  .cb-easy-footer-text { min-width: 0; flex: 1 1 16rem; }
+  .cb-easy-footer #cb-easy-status { margin: 0; }
+  .cb-easy-footer .cb-ptt-shortcut { margin: .15rem 0 0; }
+  #cb-easy-continuous { display: inline-flex; align-items: center; gap: .7rem; margin-left: auto; padding: .25rem .1rem; border: 0; border-radius: .5rem; background: transparent; color: #fff; font-weight: 900; font-size: .95rem; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
+  #cb-easy-continuous .cb-continuous-track { position: relative; flex: none; width: 3.1rem; height: 1.75rem; border-radius: 999px; background: #3a4552; transition: background .15s; }
+  #cb-easy-continuous .cb-continuous-track::after { content: ''; position: absolute; top: .22rem; left: .22rem; width: 1.31rem; height: 1.31rem; border-radius: 50%; background: #f1f4f8; box-shadow: 0 1px 3px #0009; transition: translate .15s; }
+  #cb-easy-continuous[aria-checked="true"] .cb-continuous-track { background: #c8392b; }
+  #cb-easy-continuous[aria-checked="true"] .cb-continuous-track::after { translate: 1.35rem 0; }
+  #cb-easy-continuous:disabled { opacity: .5; cursor: default; }
+  #cb-easy-continuous:focus-visible { outline: 3px solid #a1d3ff; outline-offset: 3px; }
 </style>
 </head>
 <body>
@@ -199,8 +211,16 @@
     </div>
   </div>
   <p class="cb-face-scroll-hint">Swipe or scroll sideways to reach all controls.</p>
-  <p id="cb-easy-status" aria-live="polite">Connect the ESP8266 with PORT.</p>
-  <p class="cb-ptt-shortcut">Hold the spacebar to talk (PTT).</p>
+  <div class="cb-easy-footer">
+    <div class="cb-easy-footer-text">
+      <p id="cb-easy-status" aria-live="polite">Connect the ESP8266 with PORT.</p>
+      <p class="cb-ptt-shortcut">Hold the spacebar to talk (PTT).</p>
+    </div>
+    <button type="button" id="cb-easy-continuous" role="switch" aria-checked="false" title="Continuous transmit (latched PTT)" disabled>
+      <span class="cb-continuous-track" aria-hidden="true"></span>
+      <span>Continuous TX</span>
+    </button>
+  </div>
   <section id="cb-easy-settings" aria-labelledby="cb-easy-settings-title" hidden>
     <div class="cb-easy-settings-head"><h2 id="cb-easy-settings-title">Settings</h2><button id="cb-easy-settings-close" type="button">Close</button></div>
     <div id="cb-easy-settings-body"></div>
@@ -1239,12 +1259,12 @@
   });
   window.addEventListener('blur', () => {
     cancelDtmf();
-    if (pttHold) releasePtt();
+    if (pttHold && pttHold !== 'continuous') releasePtt();
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       cancelDtmf();
-      if (pttHold) releasePtt();
+      if (pttHold && pttHold !== 'continuous') releasePtt();
     }
   });
   window.addEventListener('pagehide', () => {
@@ -1341,6 +1361,7 @@
       ...getVuMeters(), rxAudioActive: receiveAudioActive(), dtmfKey: activeDtmfKey(),
       rxStatus: $('rxStatus').textContent, status: $('status').textContent, statusError: $('status').dataset.error === 'true'}),
     press: () => pressPtt('front'),
+    pressContinuous: () => pressPtt('continuous'),
     release: () => { if (pttHold) releasePtt(); },
     dtmfPress: startDtmf,
     dtmfRelease: stopDtmf,
@@ -1387,6 +1408,7 @@
   const panel = easy('panel');
   const face = byId('cb-face');
   const ptt = easy('ptt');
+  const continuous = easy('continuous');
   const settings = easy('settings');
   const settingsTitle = easy('settings-title');
   const settingsBody = easy('settings-body');
@@ -1512,6 +1534,9 @@
     ptt.dataset.held = String(Boolean(snapshot.pttHold));
     ptt.setAttribute('aria-pressed', ptt.dataset.held);
     ptt.disabled = byId('ptt').disabled;
+    const continuousOn = snapshot.pttHold === 'continuous';
+    continuous.setAttribute('aria-checked', String(continuousOn));
+    continuous.disabled = byId('ptt').disabled || (Boolean(snapshot.pttHold) && !continuousOn);
     easy('channel').disabled = byId('preset').disabled;
     easy('fine').disabled = byId('fine').disabled;
     easy('mode').disabled = byId('profile').disabled;
@@ -1775,6 +1800,12 @@
     if (radio.snapshot().pttHold === 'front') radio.release();
     render();
   }
+  continuous.addEventListener('click', () => {
+    const snapshot = radio.snapshot();
+    if (snapshot.pttHold === 'continuous') radio.release();
+    else if (canTalk()) void radio.pressContinuous();
+    render();
+  });
   ptt.addEventListener('pointerdown', event => {
     if (event.button !== 0 || pointer !== null || !canTalk()) return;
     event.preventDefault();
