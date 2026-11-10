@@ -1,0 +1,14 @@
+  #cb-dtmf-drawer { width: min(100%, 32rem); margin: .85rem auto 0; padding: .7rem .85rem .9rem; border: 1px solid #92908a; border-radius: .85rem; background: repeating-linear-gradient(145deg, #fff03b00 0 3px, #ffffff06 3px 4px), linear-gradient(#292827, #1d1d1d); box-shadow: inset 0 0 0 3px #121212, inset 0 0 0 4px #60605e, 0 4px 8px #0007; }
+  @media (min-width: 53rem) { #cb-dtmf-drawer { translate: min(5vw, 5rem) 0; } }
+  #cb-dtmf-toggle { display: flex; align-items: center; gap: .65rem; color: #ffc153; text-transform: uppercase; font-size: 1.15rem; font-weight: 900; letter-spacing: .09em; cursor: pointer; list-style: none; }
+  #cb-dtmf-toggle::-webkit-details-marker { display: none; }
+  #cb-dtmf-toggle::before, #cb-dtmf-toggle::after { content: ''; flex: 1; height: 2px; background: #d59124; }
+  #cb-dtmf-toggle:focus-visible, .cb-dtmf-keys button:focus-visible { outline: 2px solid #ffcb70; outline-offset: 2px; }
+  .cb-dtmf-controls { display: grid; grid-template-columns: 3fr minmax(5.5rem, 1fr); gap: clamp(.35rem, 1.5vw, .8rem); margin-top: .5rem; }
+  .cb-dtmf-keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(.25rem, 1vw, .48rem); }
+  .cb-dtmf-keys button { min-height: 2.65rem; padding: .2rem; border: 1px solid #71706d; border-radius: .45rem; background: linear-gradient(#454441, #272726); box-shadow: inset 0 1px 0 #fff3, 0 2px 2px #000b; color: #f8f7f3; font: 800 clamp(1.15rem, 2vw, 1.6rem)/1 Arial, sans-serif; touch-action: none; user-select: none; }
+  .cb-dtmf-keys button:hover { border-color: #ffc153; }
+  .cb-dtmf-keys button[aria-pressed="true"] { background: radial-gradient(ellipse at center, #ffc861, #f6a214); border-color: #ffcc69; color: #251304; box-shadow: 0 0 .45rem #f6a21499; }
+  .cb-dtmf-readouts { display: grid; gap: .4rem; align-content: stretch; border-left: 1px solid #767571; padding-left: .45rem; }
+  .cb-dtmf-readouts > * { display: grid; align-content: center; justify-items: center; min-width: 0; padding: .25rem; border: 1px solid #6b6a67; border-radius: .35rem; background: #20201f; color: #f2f1ec; text-align: center; text-transform: uppercase; font-size: clamp(.55rem, 1.4vw, .72rem); font-weight: 800; line-height: 1.2; }
+  .cb-dtmf-readouts output { font-variant-numeric: tabular-nums; text-transform: none; font-size: .9rem; }

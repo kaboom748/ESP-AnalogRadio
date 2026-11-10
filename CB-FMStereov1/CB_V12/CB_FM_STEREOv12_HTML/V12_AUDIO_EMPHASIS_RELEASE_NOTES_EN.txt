@@ -1,0 +1,29 @@
+CB FM STEREO V12 — AUDIO EMPHASIS
+================================
+
+Baseline: complete CB FM Stereo V10 English project (including robust RDS RX).
+New option added BELOW RDS panels in both Easy and Current interface:
+  Off — original V10 audio, 75 us — North America (default), 50 us — Europe.
+Both interfaces reflect the same selection. The control is collapsible.
+
+Digital DSP:
+  TX: matched, unity-DC digital pre-emphasis on left and right audio before
+      the FM stereo multiplex is constructed. Pilot (19 kHz), stereo subcarrier
+      (38 kHz), and RDS (57 kHz) are not pre-emphasized. Existing limiter remains.
+  RX: matched one-pole de-emphasis on the decoded left and right channels after
+      stereo demultiplexing, before playback. Applies in HQ, ROBUST and MONO.
+  Matched 50/75 us transfer: a=exp(-1/(sample_rate*tau)); pre-emphasis
+      Hpre(z)=(1-a*z^-1)/(1-a), de-emphasis Hde(z)=(1-a)/(1-a*z^-1).
+  Off: a=0, unity gain, original audio processing.
+  Settings are live; no serial protocol changes.
+
+Unchanged: firmware Arduino logic, MPX framing and sample rate, RDS TX & RX,
+  fixed transmitted RadioText, RBDS North America default, PS, PI, PTY,
+  Continuous TX, PTT, DTMF, TX POWER, frequency/channel, squelch and ports.
+
+Important: both radio endpoints should use the same setting to prevent over-
+bright/over-dull audio. Pre-emphasis can raise treble peaks and cause stronger
+limiter action; bench RF/audio measurements remain necessary for final quality.
+
+Validation: JS syntax checks, basic UI controls and AudioWorklet DSP regression
+and tone response tests; RF hardware was not available in this environment.

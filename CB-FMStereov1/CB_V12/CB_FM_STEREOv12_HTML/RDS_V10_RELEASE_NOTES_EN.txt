@@ -1,0 +1,21 @@
+CB FM STEREO V10 — ROBUST RADIO TEXT RECEPTION
+============================================
+
+Built from the complete V9 English project. The only functional change is
+rds-rx-worker-source.js (browser-side RDS receiver). V9 firmware and TX are
+unchanged apart from the Arduino sketch filename.
+
+- Keep CRC-verified RadioText fragments across long MPX transport gaps (>50ms).
+  Resynchronize the 57 kHz/bit timing without discarding known text fragments.
+- Recover 2A RadioText from separately CRC-verified block C and block D pairs
+  across repeated transmissions; each block still needs a correct CRC.
+- When block A is damaged, accept 2A B/C/D data only if the RDS timing phase
+  is already locked to a known PI. For 2B, accept B/D with the same safeguards.
+- Always reject corrupted data blocks; no unsafe majority vote or guessed text.
+- Keep the last complete RadioText during reassembly and on reception fades.
+- Maintain RBDS (North America), HQ-only RDS RX, English interface,
+  fixed TX RadioText (no transmitted timer), Continuous TX, PTT and DTMF.
+
+Validation: tests in this workspace include clean TX -> RX, corrupted blocks,
+missing groups, long MPX gaps, RX status retention and browser UI.
+Real-world weak RF reception requires validation on the ESP8266 pair.
