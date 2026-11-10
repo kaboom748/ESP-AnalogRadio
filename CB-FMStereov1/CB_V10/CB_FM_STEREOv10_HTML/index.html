@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CB FM Stereo</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="advanced.css">
+<link rel="stylesheet" href="facade.css">
+<link rel="stylesheet" href="dtmf.css">
+<link rel="stylesheet" href="easy-controls.css">
+<link rel="stylesheet" href="rds.css">
+</head>
+<body>
+
+<div class="cb-mode-tabs" role="tablist" aria-label="CB interface">
+  <button type="button" id="cb-tab-easy" role="tab" aria-controls="cb-easy-panel" aria-selected="true">Easy</button>
+  <button type="button" id="cb-tab-advanced" role="tab" aria-controls="cb-advanced-panel" aria-selected="false" tabindex="-1">Current interface</button>
+</div>
+<section id="cb-easy-panel" role="tabpanel" aria-labelledby="cb-tab-easy">
+  <div class="cb-face-viewport">
+    <div id="cb-face" data-mode="off">
+      <img class="cb-face-art" src="facade-cb.png" width="1983" height="793" alt="" draggable="false">
+      <div class="cb-face-lcd" aria-label="Radio display">
+        <div class="cb-lcd-state"><span id="cb-lcd-mode">OFF</span><span id="cb-lcd-profile">HQ</span><span id="cb-lcd-rds" hidden>RDS</span></div>
+        <div class="cb-lcd-vu" role="group" aria-label="Stereo audio levels in dBFS">
+          <div class="cb-vu-scale" aria-hidden="true"><span>−30</span><span>−18</span><span>−6</span><span>0</span></div>
+          <span aria-hidden="true">L</span>
+          <div class="cb-vu-bar" id="cb-vu-l" role="meter" aria-label="Left audio level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" data-db="-60" data-level="0" data-peak="false">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <span aria-hidden="true">R</span>
+          <div class="cb-vu-bar" id="cb-vu-r" role="meter" aria-label="Right audio level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" data-db="-60" data-level="0" data-peak="false">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+        </div>
+        <div id="cb-lcd-meter" aria-hidden="true"><span>S</span><div class="cb-lcd-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        <span id="cb-lcd-channel">07</span>
+        <span id="cb-lcd-frequency">2,442.3125 MHz</span>
+        <span id="cb-lcd-detail" aria-live="polite"></span>
+      </div>
+      <div class="cb-face-indicators" role="group" aria-label="Radio indicators">
+        <div><span class="cb-face-led cb-face-led-rx" id="cb-led-rx" role="img" aria-label="RX off"></span><span aria-hidden="true">RX</span></div>
+        <div><span class="cb-face-led cb-face-led-sq" id="cb-led-sq" role="img" aria-label="SQ off"></span><span aria-hidden="true">SQ</span></div>
+        <div><span class="cb-face-led cb-face-led-tx" id="cb-led-tx" role="img" aria-label="TX off"></span><span aria-hidden="true">TX</span></div>
+      </div>
+      <span class="cb-face-caption cb-face-title" aria-hidden="true">C.B. FM STEREO</span>
+      <span class="cb-face-caption cb-face-channel-label" aria-hidden="true">CHANNEL</span>
+      <span class="cb-face-caption cb-face-fine-label" aria-hidden="true">RX FINE</span>
+      <div class="cb-face-key-strip" aria-hidden="true"></div>
+      <button type="button" class="cb-hit cb-hit-ptt" id="cb-easy-ptt" aria-label="Hold to talk" title="Hold to talk" aria-pressed="false" disabled></button>
+      <button type="button" class="cb-hit cb-hit-dial cb-hit-vol" id="cb-easy-vol" aria-label="Receive volume" title="Receive volume"></button>
+      <button type="button" class="cb-hit cb-hit-dial cb-hit-sq" id="cb-easy-sq" aria-label="Squelch" title="Squelch"></button>
+      <button type="button" class="cb-hit cb-hit-dial cb-hit-channel" id="cb-easy-channel" aria-label="Channel" title="Channel"></button>
+      <button type="button" class="cb-hit cb-hit-dial cb-hit-fine" id="cb-easy-fine" aria-label="Fine-tune reception" title="Fine-tune reception"></button>
+      <button type="button" class="cb-hit cb-hit-key cb-hit-mode" id="cb-easy-mode" aria-label="Receive mode" title="Receive mode">RX MODE</button>
+      <button type="button" class="cb-hit cb-hit-key cb-hit-gain" id="cb-easy-gain" aria-label="Microphone gain" title="Microphone gain">MIC GAIN</button>
+      <button type="button" class="cb-hit cb-hit-key cb-hit-power" id="cb-easy-power" aria-label="TX POWER — APWR 63, 0 maximum, 191 minimum" title="TX POWER — APWR 63">TX POWER</button>
+      <button type="button" class="cb-hit cb-hit-key cb-hit-audio" id="cb-easy-audio" aria-label="Audio devices" title="Audio devices">AUDIO</button>
+      <button type="button" class="cb-hit cb-hit-key cb-hit-port" id="cb-easy-port" aria-label="Serial port" title="Serial port">PORT</button>
+    </div>
+  </div>
+  <p class="cb-face-scroll-hint">Swipe or scroll sideways to reach all controls.</p>
+  <section id="cb-rds-easy" class="cb-rds-panel" data-rds-state="idle" aria-label="RDS data">
+    <div class="cb-rds-heading"><h2 data-rds-value="heading">RDS (RX)</h2>
+      <p>RDS decoding only in FM Stereo / HQ reception · RadioText always transmitted during TX</p>
+      <p class="cb-rds-localtimer">Local TX duration: <strong data-rds-value="timer">—</strong></p></div>
+    <dl class="cb-rds-metrics">
+      <div class="cb-rds-lock" data-rds-state="idle"><dt>RDS status</dt><dd data-rds-value="status">FM Stereo / HQ only</dd></div>
+      <div><dt>Station (PS)</dt><dd data-rds-value="ps">—</dd></div>
+      <div class="cb-rds-wide"><dt>RadioText</dt><dd data-rds-value="rt">—</dd></div>
+      <div><dt>PI</dt><dd data-rds-value="pi">—</dd></div>
+      <div><dt>PTY</dt><dd data-rds-value="pty">—</dd></div>
+      <div class="cb-rds-region"><dt>RDS profile</dt><dd><select class="cb-rds-profile-select" data-rds-config="region" aria-label="RDS profile"><option value="rbds" selected>RBDS (North America)</option><option value="rds">RDS (International)</option></select></dd></div>
+    </dl>
+    <p class="cb-rds-error" data-rds-value="errors" aria-live="polite"></p>
+  </section>
+  <details id="cb-rds-settings" class="cb-rds-settings">
+    <summary>RDS settings <span>Always on during TX</span></summary>
+    <div class="cb-rds-form">
+      <label>Regional profile<select data-rds-config="region" aria-label="Regional profile RDS">
+        <option value="rbds" selected>RBDS (North America)</option><option value="rds">RDS (International)</option>
+      </select></label>
+      <label>Short station name (PS, 8 characters)<input data-rds-config="ps" value="KABOOMFM" maxlength="8" spellcheck="false"></label>
+      <label class="cb-rds-input-wide">RadioText to transmit<input data-rds-config="rt" value="CB FM Stereo" maxlength="64" spellcheck="false"></label>
+      <label>PI code (hexadecimal)<input data-rds-config="pi" value="C3D7" maxlength="4" pattern="[0-9A-Fa-f]{4}" spellcheck="false"></label>
+      <label>Program type (PTY)<select data-rds-config="pty" aria-label="Program type (PTY)"></select></label>
+      <label>RadioText format<select data-rds-config="rtVersion"><option value="2A" selected>2A · 64 characters</option><option value="2B">2B · 32 characters</option></select></label>
+    </div>
+    <p id="cb-rds-settings-help" class="cb-rds-note">RBDS · North America. RadioText is always active in TX. RX decoding is available only in HQ.</p>
+    <p class="cb-rds-note">Only the configured RadioText is transmitted, repeating unchanged during TX. The TX duration shown on this page is local and is not sent over RDS.</p>
+  </details>
+
+  <section id="cb-easy-settings" aria-labelledby="cb-easy-settings-title" hidden>
+    <div class="cb-easy-settings-head"><h2 id="cb-easy-settings-title">Settings</h2><button id="cb-easy-settings-close" type="button">Close</button></div>
+    <div id="cb-easy-settings-body"></div>
+  </section>
+  <details id="cb-dtmf-drawer" open>
+    <summary id="cb-dtmf-toggle">DTMF</summary>
+    <div class="cb-dtmf-controls">
+      <div class="cb-dtmf-keys" role="group" aria-label="DTMF keypad">
+        <button type="button" data-dtmf-key="1" aria-pressed="false">1</button>
+        <button type="button" data-dtmf-key="2" aria-pressed="false">2</button>
+        <button type="button" data-dtmf-key="3" aria-pressed="false">3</button>
+        <button type="button" data-dtmf-key="4" aria-pressed="false">4</button>
+        <button type="button" data-dtmf-key="5" aria-pressed="false">5</button>
+        <button type="button" data-dtmf-key="6" aria-pressed="false">6</button>
+        <button type="button" data-dtmf-key="7" aria-pressed="false">7</button>
+        <button type="button" data-dtmf-key="8" aria-pressed="false">8</button>
+        <button type="button" data-dtmf-key="9" aria-pressed="false">9</button>
+        <button type="button" data-dtmf-key="*" aria-label="Star" aria-pressed="false">*</button>
+        <button type="button" data-dtmf-key="0" aria-pressed="false">0</button>
+        <button type="button" data-dtmf-key="#" aria-label="Hash" aria-pressed="false">#</button>
+      </div>
+      <div class="cb-dtmf-readouts">
+        <p>Hold for tone</p>
+        <div>Speaker <output id="cb-dtmf-speaker">100%</output></div>
+        <div>Mic gain <output id="cb-dtmf-mic-gain">0 dB</output></div>
+      </div>
+    </div>
+  </details>
+  <div class="cb-easy-footer">
+    <div class="cb-easy-footer-text">
+      <p id="cb-easy-status" aria-live="polite">Connect the ESP8266 with PORT.</p>
+      <p class="cb-ptt-shortcut">Hold the spacebar to talk (PTT).</p>
+    </div>
+    <button type="button" id="cb-easy-continuous" role="switch" aria-checked="false" title="Continuous transmit (latched PTT)" disabled>
+      <span class="cb-continuous-track" aria-hidden="true"></span>
+      <span>Continuous TX</span>
+    </button>
+  </div>
+</section>
+
+<div id="cb-advanced-panel" role="tabpanel" aria-labelledby="cb-tab-advanced" hidden>
+<main>
+  <header>
+    <div><h1>CB FM Stereo</h1><p class="sub">Two ESP8266 radios · half-duplex · 2.4 GHz</p></div>
+    <button type="button" class="button-primary" id="serial">Connect serial port</button>
+  </header>
+  <section class="card station">
+    <div class="bar"><h2>Radio</h2><span id="state" data-state="off">Disconnected</span></div>
+    <p id="status" class="help" aria-live="polite">Choose this ESP8266’s serial port. The radio starts listening once connected.</p>
+    <button type="button" id="ptt" aria-label="Press and hold to talk" data-held="false" disabled>PUSH TO TALK</button>
+    <p class="help">Hold the button or the spacebar to talk. Release to listen.</p>
+    <div class="bar pad">
+      <button type="button" id="txPowerButton" aria-controls="txPowerPanel" aria-expanded="false">TX POWER</button>
+      <output id="txPowerValue" for="apwr">APWR 63</output>
+    </div>
+    <div id="txPowerPanel" class="tx-power-controls" hidden>
+      <label for="apwr"><span>APWR · 0 to 191</span></label>
+      <input id="apwr" type="number" min="0" max="191" step="1" value="63" inputmode="numeric" autocomplete="off" aria-invalid="false" aria-describedby="txPowerHelp txPowerError">
+      <div class="tx-power-scale" aria-hidden="true"><span>MAX · 0</span><span>MIN · 191</span></div>
+      <input id="apwrRange" type="range" min="0" max="191" step="1" value="63" aria-label="APWR: 0 maximum TX power, 191 minimum TX power" aria-valuetext="APWR 63">
+      <p id="txPowerHelp" class="help">0 = maximum TX power · 191 = minimum TX power. Applies to both PTT and DTMF.</p>
+      <p id="txPowerState" class="help" aria-live="polite">APWR 63 will be applied before each transmission.</p>
+      <p id="txPowerError" class="help tx-power-error" role="alert" hidden>Enter an integer from 0 to 191.</p>
+    </div>
+    <div class="dial pad"><label for="squelch"><span>Squelch</span></label><output id="squelchValue" for="squelch">12 dB above noise</output></div>
+    <input id="squelch" type="range" min="0" max="42" value="12" aria-label="Squelch threshold">
+    <meter id="signal" min="0" max="60" value="0" aria-label="Received signal level above noise"></meter>
+    <p class="help radio-readout" id="rxStatus">Signal — · Squelch closed</p>
+    <div class="dial pad"><label for="rxVolume"><span>Receive volume</span></label><output id="rxVolumeValue" for="rxVolume">100 %</output></div>
+    <input id="rxVolume" type="range" min="0" max="100" value="100">
+  </section>
+  <div class="grid">
+    <section class="card">
+      <h2>Frequency and reception</h2>
+      <label><span>Preset</span><select id="preset">
+        <option value="2412.3125">Channel 1 · 2,412.3125 MHz</option>
+        <option value="2442.3125" selected>Channel 7 · 2,442.3125 MHz</option>
+        <option value="2462.3125">Channel 11 · 2,462.3125 MHz</option>
+        <option value="manual">Manual frequency</option>
+      </select></label>
+      <div class="fine">
+        <label><span>Frequency (MHz)</span><input id="frequency" inputmode="decimal" value="2442.3125" autocomplete="off"></label>
+        <label><span>RX fine tuning (Hz)</span><input id="fine" type="number" min="-50000" max="50000" step="1" value="0"></label>
+      </div>
+      <label><span>Receive profile</span><select id="profile">
+        <option value="HQ">HQ · stereo 120 kS/s</option>
+        <option value="ROBUST">ROBUST · stereo 96 kS/s</option>
+        <option value="MONO">MONO · 48 kS/s</option>
+      </select></label>
+      <button type="button" id="tune" class="pad" disabled>Tune</button>
+      <p class="help pad radio-readout" id="actual">RX tuned to —</p>
+    </section>
+    <section class="card">
+      <h2>Audio</h2>
+      <label><span>Microphone</span><select id="mic"><option value="">Default microphone</option></select></label>
+      <div class="dial"><label for="micGain"><span>Mic gain</span></label><output id="micGainValue" for="micGain">0 dB</output></div>
+      <input id="micGain" type="range" min="-24" max="18" value="0" aria-valuetext="0 dB">
+      <label><span>Speaker</span><select id="speaker"><option value="">Default output</option></select></label>
+      <button type="button" id="enableMic" class="pad">Prepare microphone</button>
+      <p class="help pad" id="audioStatus">Transmission uses both microphone channels. Mono input is centered.</p>
+    </section>
+  </div>
+  <section class="card cb-rds-advanced" data-rds-state="idle" aria-label="RDS in current interface">
+    <h2>RDS (Radio Data System) · RBDS by default <span class="cb-rds-localtimer">· Local TX <strong data-rds-value="timer">—</strong></span></h2>
+    <p class="help">TX always transmits PS + the configured RadioText without a timer. RDS is decoded only in FM Stereo (HQ) reception.</p>
+    <dl class="cb-rds-metrics">
+      <div class="cb-rds-lock" data-rds-state="idle"><dt>RDS status</dt><dd data-rds-value="status">—</dd></div>
+      <div><dt>Station PS</dt><dd data-rds-value="ps">—</dd></div>
+      <div class="cb-rds-wide"><dt>RadioText</dt><dd data-rds-value="rt">—</dd></div>
+      <div><dt>PI</dt><dd data-rds-value="pi">—</dd></div>
+      <div><dt>PTY</dt><dd data-rds-value="pty">—</dd></div>
+      <div><dt>Regional profile</dt><dd data-rds-value="profile">RBDS (North America)</dd></div>
+    </dl>
+    <details class="cb-rds-settings cb-rds-advanced-settings">
+      <summary>Configure TX RDS</summary>
+      <div class="cb-rds-form">
+        <label>Regional profile<select data-rds-config="region"><option value="rbds" selected>RBDS (North America)</option><option value="rds">RDS (International)</option></select></label>
+        <label>Short station name (PS)<input data-rds-config="ps" value="KABOOMFM" maxlength="8" spellcheck="false"></label>
+        <label class="cb-rds-input-wide">RadioText to transmit<input data-rds-config="rt" value="CB FM Stereo" maxlength="64" spellcheck="false"></label>
+        <label>PI code<input data-rds-config="pi" value="C3D7" maxlength="4" pattern="[0-9A-Fa-f]{4}" spellcheck="false"></label>
+        <label>PTY<select data-rds-config="pty"></select></label>
+        <label>RadioText format<select data-rds-config="rtVersion"><option value="2A" selected>2A · 64 characters</option><option value="2B">2B · 32 characters</option></select></label>
+      </div>
+    </details>
+    <details class="cb-rds-diagnostics"><summary>RDS diagnostics</summary>
+      <p>Valid groups: <span data-rds-value="groups">0</span> · CRC errors: <span data-rds-value="crc">0</span> · Skipped samples: <span data-rds-value="skipped">0</span></p>
+    </details>
+    <p class="cb-rds-error" data-rds-value="errors"></p>
+  </section>
+</main>
+</div>
+<script src="rds-rx-worker-source.js"></script>
+<script src="rds-tx-worker-source.js"></script>
+<script src="audio-worklet-source.js"></script>
+<script src="rds.js"></script>
+<script src="radio-state.js"></script>
+<script src="serial-protocol.js"></script>
+<script src="audio-engine.js"></script>
+<script src="dtmf.js"></script>
+<script src="rx.js"></script>
+<script src="tx.js"></script>
+<script src="advanced-ui.js"></script>
+<script src="easy-ui.js"></script>
+</body>
+</html>
