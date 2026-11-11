@@ -1,4 +1,4 @@
-ESPHOME and ARDUINO compatible
+ESPHOME(test) and ARDUINO(current) compatible
 
 “No soldering, no extra components: all you need is an ESP8266 D1 Mini and its serial port to broadcast analog FM stereo.”
 
