@@ -1,3 +1,5 @@
+"2 ESP8266 NEAR FOR THE MOMENT....."
+
 <img width="1024" height="559" alt="7352ebec-a2f2-49d1-8afd-194a049ac29a" src="https://github.com/user-attachments/assets/fca0b1bd-2507-41d1-b2c0-b05872ed2d90" />
 <img width="1628" height="900" alt="Capture d’écran 2026-11-10 205938" src="https://github.com/user-attachments/assets/ed1c3892-af73-4f37-b016-f70ca070ec68" />
 # CB Duplex Voice — EASY + Current Interface
