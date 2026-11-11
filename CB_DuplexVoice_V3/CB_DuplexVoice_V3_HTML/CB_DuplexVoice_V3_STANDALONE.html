@@ -1,0 +1,1387 @@
+<!doctype html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CB Duplex Voice V3 · 2.4 GHz</title>
+<style>
+:root{color-scheme:dark;--bg:#0c141b;--pane:#17242e;--pane2:#1e2d37;--line:#344c57;--text:#f1f7f8;--muted:#aac0c9;--mint:#72dec0;--amber:#e4b363;--error:#ffaaaa;font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#172b35,#0c141b 55%);color:var(--text)}main{max-width:1060px;margin:0 auto;padding:28px 18px 60px}
+.page-head{display:flex;align-items:start;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:22px}
+h1{font-size:clamp(2rem,5vw,3.1rem);line-height:1.1;margin:2px 0 5px;letter-spacing:-.04em}
+h2{font-size:1.12rem;line-height:1.25;margin:0 0 15px}.sub{color:var(--muted);margin:4px 0 14px}.eyebrow,.kicker{font-weight:650;letter-spacing:.16em;color:var(--mint);font-size:.73rem;text-transform:uppercase;margin:0}
+.chip{border:1px solid var(--line);background:#21323c;color:#c6d6de;border-radius:999px;padding:7px 14px;font-size:.85rem;font-weight:650}
+.panel{padding:22px;background:var(--pane);border:1px solid var(--line);border-radius:14px;margin-bottom:15px;box-shadow:0 12px 30px #00000015}
+.station{background:linear-gradient(120deg,#172831,#192630)}.station-top{display:flex;align-items:center;gap:18px;margin-bottom:20px}
+.radio-icon{height:70px;width:70px;min-width:70px;border:1px solid #456773;background:#233744;color:var(--mint);border-radius:15px;display:grid;place-items:center}.radio-icon svg{height:48px;width:48px}
+.station-top h2{font-size:1.7rem;margin:2px 0}#role[data-role="A"]{color:var(--amber)}#role[data-role="B"]{color:var(--mint)}#role[data-role="L"]{color:#8abcec}#session{margin:0;color:var(--muted)}
+.status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}.status-grid>div{background:#101e27;border:1px solid #304550;padding:12px;border-radius:8px;display:flex;flex-direction:column;gap:4px;min-height:81px}.status-grid span{color:var(--muted);font-size:.78rem}.status-grid strong{font-size:.86rem;overflow-wrap:anywhere}
+.buttons{display:flex;flex-wrap:wrap;gap:9px}.button{border:1px solid #526773;background:#273842;color:var(--text);padding:10px 14px;border-radius:9px;font-weight:700;cursor:pointer}.button:hover:not(:disabled){border-color:var(--mint)}.button:disabled{opacity:.4;cursor:not-allowed}.button.primary{color:#09281f;background:var(--mint);border-color:var(--mint)}.button.ptt{background:#73463f;border-color:#bb7064;color:#fff;min-width:178px}.button.ptt:not(:disabled){box-shadow:inset 0 0 0 1px #ffa19744}
+.hint{font-size:.83rem;color:var(--muted);margin:13px 0 0}.error{color:var(--error);min-height:1.3rem;margin:9px 0 0}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:15px}.two-col>.panel{margin-bottom:15px}.form-grid{gap:12px}
+label{display:flex;flex-direction:column;color:#c6d8df;font-size:.83rem;gap:5px}input,select{background:#0f1d25;color:#f5fbfd;border:1px solid #46606c;border-radius:7px;padding:9px;min-width:0;font:inherit}input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--mint);outline-offset:3px}
+input[type=range]{accent-color:var(--mint);padding:0;margin-top:12px}input:disabled,select:disabled{opacity:.55}.info-row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #2e414b}.info-row span{color:var(--muted)}.info-row strong{font-variant-numeric:tabular-nums}
+.notice{background:#203944;color:#c9e9eb;padding:13px;border-radius:8px;font-size:.85rem;line-height:1.5;margin:15px 0 0}.notice.amber{background:#3b3023;color:#f3dbb7}
+summary{cursor:pointer;color:var(--mint);font-weight:700}details p{color:var(--muted);font-size:.87rem}code{color:#fff}.log-title{margin-top:21px}pre{background:#0d1b23;border-radius:9px;border:1px solid #344954;max-height:230px;min-height:70px;padding:13px;overflow:auto;white-space:pre-wrap;color:#c1d7da;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}footer{color:var(--muted);text-align:center;font-size:.8rem;margin-top:12px}
+@media(max-width:720px){.two-col{grid-template-columns:1fr}.status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.station-top h2{font-size:1.4rem}.panel{padding:16px}}
+@media(max-width:460px){.status-grid{grid-template-columns:1fr}.radio-icon{width:52px;height:52px;min-width:52px}.radio-icon svg{height:35px;width:35px}.button{width:100%}}
+
+.version-tag{display:inline-flex;vertical-align:middle;font-size:.32em;letter-spacing:.06em;border:1px solid #4c7c7e;border-radius:5px;color:#93e9d1;padding:.15em .45em;transform:translateY(-.1em)}
+
+/* V3 diagnostic bench; existing radio interface remains unchanged. */
+.diagnostic-panel summary{font-size:1.12rem;line-height:1.4}
+.diagnostic-panel details[open]>summary{margin-bottom:13px}
+.diag-form{margin-top:15px}
+.diag-checks{display:flex;flex-wrap:wrap;gap:16px 28px;margin:16px 0}
+.diag-checks label{display:flex;align-items:center;flex-direction:row;font-size:.84rem;gap:8px}
+.diag-checks input{accent-color:var(--mint);width:17px;height:17px}
+.diag-buttons{margin-top:15px}
+.diag-progress{margin:16px 0;color:var(--muted);font-size:.87rem}
+.diag-progress progress{display:block;appearance:none;width:100%;height:9px;margin-bottom:9px;border:0;border-radius:5px;overflow:hidden;background:#101b22}
+.diag-progress progress::-webkit-progress-bar{background:#101b22}
+.diag-progress progress::-webkit-progress-value{background:var(--mint)}
+.diag-progress progress::-moz-progress-bar{background:var(--mint)}
+.diag-results-head{display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;gap:10px;margin:22px 0 9px}
+.diag-results-head h2{margin:0}
+.diag-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:15px}
+.diag-metrics>div{display:flex;flex-direction:column;gap:3px;background:#0e1d25;border:1px solid #2d4450;padding:10px 13px;border-radius:8px}
+.diag-metrics span{font-size:.77rem;color:var(--muted)}.diag-metrics strong{font-size:1rem;font-variant-numeric:tabular-nums}
+#diagChart{display:block;width:100%;height:auto;max-height:290px;background:#10202a;border:1px solid #324a56;border-radius:10px}
+.table-scroller{overflow-x:auto;margin-top:15px;border-radius:9px;border:1px solid #334a54}
+.diag-table{border-collapse:collapse;width:100%;min-width:835px;font-size:.78rem;font-variant-numeric:tabular-nums}
+.diag-table th{color:#bcd4df;text-align:right;background:#1f323c;font-weight:650;white-space:nowrap}
+.diag-table th:first-child,.diag-table td:first-child{text-align:left}
+.diag-table td,.diag-table th{padding:9px 10px;border-bottom:1px solid #2f424e;text-align:right}
+.diag-table tbody tr:nth-child(even){background:#162833}.diag-table tbody tr:last-child td{border-bottom:0}
+.diag-table .empty{text-align:center!important;color:var(--muted);padding:18px}
+.diag-result{font-size:.71rem;border:1px solid;padding:3px 7px;border-radius:999px;white-space:nowrap}
+.diag-result.PASS{color:#6ce4b4;border-color:#3e947a}.diag-result.WARN{color:#ffce8c;border-color:#987849}
+.diag-result.FAIL{color:#ff999d;border-color:#a9535d}.diag-result.BAND{color:#9fc1e8;border-color:#6387ae}
+@media(max-width:720px){.diag-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:460px){.diag-buttons .button{width:100%}}
+
+</style>
+</head>
+<body>
+<main>
+  <header class="page-head">
+    <div><p class="eyebrow">Experimental FM radio · One ESP8266 per station</p>
+      <h1>CB Duplex Voice <span class="version-tag">V3</span></h1>
+      <p class="sub">Warm TDD · hands-free two-way speech · passive group monitoring</p></div>
+    <span class="chip" id="connection">Port closed</span>
+  </header>
+  <section class="panel station">
+    <div class="station-top">
+      <div class="radio-icon" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none"><path d="M14 35H50V54H14V35ZM20 35V19L46 9M23 43H39M23 48H39" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><circle cx="46" cy="44" r="6" stroke="currentColor" stroke-width="3"/></svg></div>
+      <div><span class="kicker">RADIO STATUS</span><h2 id="role" data-role="off">OFF</h2>
+        <p id="session">Press PTT once to start a session, or join an existing Master.</p></div>
+    </div>
+    <div class="status-grid">
+      <div><span>Synchronization</span><strong id="sync">—</strong></div>
+      <div><span>Remote Master</span><strong id="peer">No remote Master detected</strong></div>
+      <div><span>Reply channel</span><strong id="speaker">—</strong></div>
+      <div><span>Audio rate</span><strong id="sampleRate">—</strong></div>
+    </div>
+    <div class="buttons">
+      <button class="button primary" id="connect" type="button">Connect &amp; Listen</button>
+      <button class="button ptt" id="ptt" type="button" disabled>PTT — Start session</button>
+      <button class="button" id="endSession" type="button" disabled>End Session</button>
+      <button class="button" id="disconnect" type="button" disabled>Disconnect</button>
+    </div>
+    <p class="hint">PTT starts the session; release it and speak hands-free. Other stations can remain passive listeners. A Slave can occupy the reply slot only if it appears free.</p>
+    <p id="error" class="error" role="alert" aria-live="polite"></p>
+  </section>
+  <div class="two-col">
+    <section class="panel">
+      <h2>Radio settings</h2>
+      <p class="sub">Set the same RF frequency and slot timing on all stations <strong>before connecting</strong>.</p>
+      <div class="two-col form-grid">
+        <label>RF frequency (kHz)<input id="frequency" type="number" min="2400000" max="2483500" step="1" value="2442312"></label>
+        <label>TX power (APWR)<input id="txPower" type="number" min="0" max="191" value="63"></label>
+        <label>TDD timing preset<select id="timingPreset">
+          <option value="12:4">Original · 12 / 4 · 2,143 slots/s</option>
+          <option value="16:4">Moderate · 16 / 4 · 1,875 slots/s</option>
+          <option value="20:8" selected>Longer + guard · 20 / 8 · 1,500 slots/s</option>
+          <option value="20:12">Slowest · 20 / 12 · 1,364 slots/s</option>
+          <option value="custom">Custom timing</option>
+        </select></label>
+        <label>Audio profile<select id="audioProfile">
+          <option value="voice" selected>Voice — speech optimized</option>
+          <option value="music">Music / Raw — preserve quiet audio</option>
+        </select></label>
+        <label>Data samples / slot<input id="dataSamples" type="number" min="12" max="20" step="2" value="20"></label>
+        <label>Guard samples<input id="guardSamples" type="number" min="4" max="30" value="8"></label>
+        <label>RX RF gain<select id="rfGain"><option value="7">Automatic</option><option value="0" selected>0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select></label>
+        <label>RX VGA gain<input id="vga" type="number" min="0" max="7" value="0"></label>
+        <label>RX baseband gain<input id="bbGain" type="number" min="0" max="32" value="16"></label>
+        <label>Speaker volume <input type="range" id="volume" min="0" max="100" value="65"></label>
+      </div>
+      <p class="hint" id="timingPreview">20/8 · 1,500 TX bursts/s · 30,000 logical samples/s per direction.</p>
+      <p class="hint">Music / Raw requests browser echo cancellation, noise suppression and AGC OFF, and widens the mono audio filters. Use headphones, especially in Music mode. Both stations must use the same timing values (audio profiles may differ).</p>
+      <p class="hint">ESP8266 at 160 MHz · USB serial 460,800 baud 8N2 · signed PCM8 · one RF channel. The radio retunes only when the session starts, not between TDD slots.</p>
+    </section>
+    <section class="panel">
+      <h2>Receive &amp; playback</h2>
+      <div class="info-row"><span>Receive sample gaps</span><strong id="samplesLost">0</strong></div>
+      <div class="info-row"><span>Transport CRC failures</span><strong id="crcErrors">0</strong></div>
+      <div class="info-row"><span>Valid DPX1 frames</span><strong id="frames">0</strong></div>
+      <div class="info-row"><span>Audio buffer</span><strong id="audioBuffer">0 ms</strong></div>
+      <div class="info-row"><span>Audio underruns</span><strong id="underruns">0</strong></div>
+      <div class="info-row"><span>Old audio discarded (latency recovery)</span><strong id="latencyTrims">0</strong></div>
+      <div class="notice">Use headphones to avoid acoustic feedback. Voice mode requests browser noise suppression and echo cancellation; Music / Raw requests them OFF. Browser and microphone hardware may still process the audio.</div>
+      <div class="notice">V3 quiet-slot protection: Master RX stays silent when the Slave timing marker is not detected. Real audio is accepted only after a valid RF marker, so an idle RX window is no longer played as remote speech.</div>
+      <div class="notice amber">Prototype limitation: simultaneous Master attempts and multiple Slave join attempts can still collide; automatic distributed arbitration is not yet proven on RF hardware.</div>
+    </section>
+  </div>
+  <section class="panel diagnostic-panel" id="diagnosticPanel">
+    <details id="diagDetails" open>
+      <summary>RF &amp; Audio Diagnostics — Test Bench</summary>
+      <p class="sub">Transmits a known PCM8 test sequence over the existing TDD link. Measures received <strong>raw PCM before the audio filters</strong> and the locally filtered playback signal. No microphone, loudspeaker or SDR is required for the measurement.</p>
+      <div class="two-col form-grid diag-form">
+        <label>Test bank<select id="diagBank">
+          <option value="full" selected>Full bank — frequency, amplitude and silence</option>
+          <option value="frequency">Frequency response only</option>
+          <option value="level">Quiet audio / level sweep only</option>
+          <option value="noise">TDD silence / residual noise only</option>
+        </select></label>
+        <label>Receive analysis<select id="diagMeasure"><option value="both" selected>Raw PCM + Filtered PCM</option><option value="raw">Raw PCM emphasis</option><option value="filtered">Filtered PCM emphasis</option></select></label>
+      </div>
+      <div class="diag-checks">
+        <label><input id="diagAutoReverse" type="checkbox" checked> Auto-return test from Slave to Master after a received Master bank</label>
+        <label><input id="diagMute" type="checkbox" checked> Mute received test tones locally</label>
+      </div>
+      <div class="buttons diag-buttons">
+        <button type="button" class="button primary" id="diagStart" disabled>Start RF benchmark</button>
+        <button type="button" class="button" id="diagStop" disabled>Stop test</button>
+        <button type="button" class="button" id="diagLoopback">Run digital loopback (no radio)</button>
+        <button type="button" class="button" id="diagCsv" disabled>Export CSV</button>
+        <button type="button" class="button" id="diagWav" disabled>Export received WAV</button>
+      </div>
+      <div class="diag-progress"><progress id="diagProgress" max="100" value="0"></progress>
+        <span id="diagStatus" aria-live="polite">Ready for a bench test. Connect both stations as Master and Slave speaker first.</span></div>
+      <div class="diag-results-head">
+        <h2>Latest received test</h2><span class="chip" id="diagDirection">No results yet</span>
+      </div>
+      <div class="diag-metrics">
+        <div><span>Tones accepted</span><strong id="diagPass">—</strong></div>
+        <div><span>Warnings / failed</span><strong id="diagFailures">—</strong></div>
+        <div><span>Noise (raw)</span><strong id="diagNoise">—</strong></div>
+        <div><span>Received samples</span><strong id="diagSamples">—</strong></div>
+      </div>
+      <canvas id="diagChart" width="960" height="310" role="img" aria-label="Measured relative frequency response in dB"></canvas>
+      <div class="table-scroller"><table class="diag-table">
+        <thead><tr><th>Signal TX</th><th>RX frequency</th><th>Raw RX</th><th>Filtered RX</th><th>Rel. level</th><th>Raw SNR</th><th>THD est.</th><th>Lost</th><th>Result</th></tr></thead>
+        <tbody id="diagRows"><tr><td colspan="9" class="empty">Run the loopback or receive a test bank to populate the measurements.</td></tr></tbody>
+      </table></div>
+      <div class="notice">Interpretation: <strong>PASS / WARN / FAIL</strong> is based on detected tones, relative gain, noise and lost samples. <strong>BAND</strong> means an intentionally filtered voice/music frequency. PCM dBFS is <em>not RF power in dBm</em>; precise RF deviation, occupied bandwidth and spurs still require an SDR measurement.</div>
+      <div class="notice amber">With the V2 firmware, a Master can initiate a full benchmark and a participating Slave can automatically return the same bank. The Master sees the Slave → Master measurements; the Slave sees Master → Slave. Results are stored on the <strong>receiving</strong> computer, and are not telemetered to the other computer. Use the two CSV files for a complete comparison.</div>
+    </details>
+  </section>
+  <section class="panel">
+    <details><summary>Technical diagnostics and operating notes</summary>
+      <p>The original V22 PHY and packet format are preserved. Passive role <code>START L</code> does not transmit. It alternates listening to both RF slots and takes every second sample, so two voices can be mixed through the same 460,800-baud serial link.</p>
+      <p>The first received marker establishes passive slot parity; the two sources are mixed, so either initial parity still produces both voices. The "Reply channel occupied" indicator is advisory; it cannot resolve truly simultaneous requests.</p>
+      <p>The stream is mono (Voice narrowband, Music / Raw wider but not hi-fi). FM stereo, 19-kHz pilot, RDS and 75-µs emphasis are deliberately not part of this independent duplex prototype. Existing CB FM Stereo V12 remains untouched.</p>
+    </details>
+    <h2 class="log-title">Event log</h2>
+    <pre id="log" aria-live="off"></pre>
+  </section>
+  <footer>CB Duplex Voice V3 · RF &amp; Audio Diagnostics · standalone experimental prototype · open locally with Chrome/Edge or from localhost</footer>
+</main>
+<script>
+/* CB Duplex Voice — mono PCM8 resampling and passive two-slot receive mixer.
+ * The physical on-air acceleration is performed by the V22 warm TDD firmware:
+ * each logical sample occupies one 120 kS/s active sample, while the user-side
+ * PCM clock is slower. It is NOT the V.22 telephone data modem.
+ */
+(function (scope) {
+'use strict';
+const clamp = (v, low, high) => Math.min(high, Math.max(low, v));
+const AUDIO_PROFILES = Object.freeze({
+  voice: Object.freeze({txHighPassHz:125, txLowPassHz:3000, rxHighPassHz:95, rxLowPassHz:3200, txGain:1.15}),
+  music: Object.freeze({txHighPassHz:30, txLowPassHz:5000, rxHighPassHz:30, rxLowPassHz:5000, txGain:1.0})
+});
+class VoiceDsp {
+  constructor({rate=25714,inputRate=48000,dataSamples=12,passive=false,audioMode='voice',onAudio=()=>{},onDiagnostics=()=>{}}={}) {
+    if (!(rate>6000&&rate<=60000) || !(inputRate>=16000) || !Number.isInteger(dataSamples) || dataSamples%2) {
+      throw new RangeError('Invalid voice sample clock or TDD slot length');
+    }
+    this.rate=rate;
+    this.inputRate=inputRate;
+    this.passive=passive;
+    this.dataSamples=dataSamples;
+    this.halfSlot=dataSamples/2;
+    this.onAudio=onAudio;
+    this.onDiagnostics=onDiagnostics;
+    this.mic=new Float32Array(131072);
+    this.micWrite=0;
+    this.micRead=0;
+    this.micReady=false;
+    this.micPrevious=0;
+    this.high=0;
+    this.low1=0;
+    this.low2=0;
+    this.audioMode = null;
+    this.radioNext=null;
+    this.lanes=[[],[]];
+    this.rxfHigh=[0,0];this.rxfPrevious=[0,0];this.rxfLow=[0,0];
+    this.inputFrames=0;
+    this.erased=0;
+    this.overrun=0;
+    this.setAudioMode(audioMode);
+  }
+  setAudioMode(mode) {
+    const profile=AUDIO_PROFILES[mode];
+    if(!profile) throw new RangeError('Unknown audio profile');
+    if(this.audioMode===mode)return;
+    this.audioMode=mode;
+    this.txGain=profile.txGain;
+    this.hpCoeff=Math.exp(-2*Math.PI*profile.txHighPassHz/this.inputRate);
+    this.lpCoeff=1-Math.exp(-2*Math.PI*profile.txLowPassHz/this.inputRate);
+    const receiveRate=this.passive?this.rate/2:this.rate;
+    this.rxHpCoeff=Math.exp(-2*Math.PI*profile.rxHighPassHz/receiveRate);
+    this.rxLpCoeff=1-Math.exp(-2*Math.PI*profile.rxLowPassHz/receiveRate);
+    this.high=this.low1=this.low2=this.micPrevious=0;
+    this.rxfHigh.fill(0);this.rxfLow.fill(0);this.rxfPrevious.fill(0);
+  }
+  pushMic(samples) {
+    for(let i=0;i<samples.length;i++) {
+      const x=Number.isFinite(samples[i])?clamp(samples[i],-1,1):0;
+      this.high=this.hpCoeff*(this.high+x-this.micPrevious);
+      this.micPrevious=x;
+      this.low1+=this.lpCoeff*(this.high-this.low1);
+      this.low2+=this.lpCoeff*(this.low1-this.low2);
+      // Voice: 2-pole speech LP. Music: gentler 1-pole wideband LP.
+      this.mic[this.micWrite++%this.mic.length]=this.audioMode==='music'?this.low1:this.low2;
+    }
+    if(!this.micReady && this.micWrite>=Math.round(this.inputRate*.065)) {
+      this.micRead=this.micWrite-this.inputRate*.06;
+      this.micReady=true;
+    }
+    this.inputFrames+=samples.length;
+  }
+  render(count,enabled=true) {
+    if(!Number.isSafeInteger(count)||count<0||count>8192) throw new RangeError('Invalid packet length');
+    const out=new Int8Array(count);
+    if(!enabled || !this.micReady) return out;
+    const step=this.inputRate/this.rate;
+    // Absorb slow clock differences without allowing unbounded audio latency.
+    if(this.micWrite-this.micRead>this.inputRate*.28) {
+      this.overrun++;
+      this.micRead=this.micWrite-this.inputRate*.12;
+    }
+    for(let n=0;n<count;n++) {
+      const at=Math.floor(this.micRead);
+      let v=0;
+      if(at>=this.micWrite-this.mic.length+1 && at+1<this.micWrite) {
+        const f=this.micRead-at;
+        const x=this.mic[at%this.mic.length], y=this.mic[(at+1)%this.mic.length];
+        v=x+f*(y-x);
+        this.micRead+=step;
+      } else {
+        // Do not advance into the future permanently after a brief mic stall.
+        this.micRead=Math.max(0,this.micWrite-1);
+      }
+      // -128 is an out-of-band STOP command on the source firmware UART.
+      out[n]=clamp(Math.round(clamp(v*this.txGain,-1,1)*127),-127,127);
+    }
+    return out;
+  }
+  _filterRx(v,channel) {
+    // No pilot/RDS here. Coefficients precomputed once per profile/role,
+    // not once for every sample, to reduce DSP timing jitter.
+    this.rxfHigh[channel]=this.rxHpCoeff*(this.rxfHigh[channel]+v-this.rxfPrevious[channel]);
+    this.rxfPrevious[channel]=v;
+    this.rxfLow[channel]+=this.rxLpCoeff*(this.rxfHigh[channel]-this.rxfLow[channel]);
+    return clamp(this.rxfLow[channel],-1,1);
+  }
+  pushRadio(first,bytes) {
+    if(!(bytes instanceof Int8Array)||!Number.isSafeInteger(first)||first<0) throw new TypeError('Invalid received PCM frame');
+    if(this.radioNext===null) this.radioNext=first;
+    if(first<this.radioNext) {
+      const overlap=this.radioNext-first;
+      if(overlap>=bytes.length)return;
+      bytes=bytes.subarray(overlap);first=this.radioNext;
+    }
+    const gap=first-this.radioNext;
+    if(gap>0) {
+      // Large RF outages do not allocate unbounded audio memory.
+      if(gap>8192) {this.erased+=gap;this.radioNext=first;this.lanes=[[],[]];}
+      else this._pushSpan(this.radioNext,new Int8Array(gap).fill(-128));
+    }
+    this._pushSpan(first,bytes);
+    this.radioNext=first+bytes.length;
+  }
+  _pushSpan(index,bytes) {
+    if(!this.passive) {
+      const out=new Float32Array(bytes.length);
+      for(let i=0;i<bytes.length;i++) {
+        if(bytes[i]===-128)this.erased++;
+        out[i]=this._filterRx(bytes[i]===-128?0:bytes[i]/127,0);
+      }
+      // Measurements are taken before the playback array is transferred to the worklet.
+      this.onDiagnostics(index,bytes,out,this.rate);
+      this.onAudio(out,this.rate);
+      return;
+    }
+    const half=this.halfSlot;
+    for(let i=0;i<bytes.length;i++) {
+      const channel=Math.floor((index+i)/half)%2;
+      const b=bytes[i];
+      if(b===-128)this.erased++;
+      this.lanes[channel].push(this._filterRx(b===-128?0:b/127,channel));
+    }
+    const ready=Math.min(this.lanes[0].length,this.lanes[1].length);
+    if(!ready)return;
+    const out=new Float32Array(ready);
+    for(let i=0;i<ready;i++) {
+      const a=this.lanes[0][i],b=this.lanes[1][i];
+      // Both participants can speak at once. A soft saturation keeps headroom.
+      const sum=a+b;
+      out[i]=clamp(sum/(1+0.15*Math.abs(sum)),-1,1);
+    }
+    this.lanes[0].splice(0,ready);this.lanes[1].splice(0,ready);
+    this.onAudio(out,this.rate/2);
+  }
+}
+scope.CBVoiceDsp=VoiceDsp;
+if(typeof module==='object'&&module.exports)module.exports={VoiceDsp,AUDIO_PROFILES};
+})(typeof globalThis==='object'?globalThis:this);
+
+</script>
+<script>
+/* Browser audio I/O. This AudioWorklet only handles microphone capture and
+ * buffered mono playback. The radio TDD scheduling remains on the ESP8266. */
+(function(scope){
+'use strict';
+const source=String.raw`
+class DuplexVoiceIO extends AudioWorkletProcessor {
+  constructor(){
+    super();
+    this.play=new Float32Array(131072);this.mask=this.play.length-1;
+    this.writeAt=0;this.readAt=0;this.rate=25714;this.running=false;this.gain=0;
+    this.micOn=false;this.mic=new Float32Array(512);this.micAt=0;
+    this.underruns=0;this.dropped=0;this.pulse=0;
+    // Conversational audio is live: old speech must never accumulate for seconds.
+    this.latencyTrims=0;this.latencySamplesDiscarded=0;
+    this.port.onmessage=({data})=>{
+      if(data.type==='rate'){
+        this.rate=data.rate;this.writeAt=this.readAt=0;this.running=false;this.gain=0;
+        this.latencyTrims=0;this.latencySamplesDiscarded=0;
+      } else if(data.type==='play'){
+        // Hard latency boundary: at 25,714 Hz the physical ring holds ~5 s,
+        // but a live call must never replay a backlog that old. Keep the
+        // newest 120 ms whenever received data exceeds 250 ms of playout.
+        const maxBuffered=Math.max(256,Math.round(this.rate*.25));
+        const targetBuffered=Math.max(128,Math.round(this.rate*.12));
+        const values=data.values;
+        for(let i=0;i<values.length;i++){
+          if(this.writeAt-Math.floor(this.readAt)>=this.play.length-2){
+            this.readAt=Math.floor(this.readAt)+1;this.dropped++;
+          }
+          this.play[this.writeAt++&this.mask]=values[i];
+        }
+        const buffered=this.writeAt-this.readAt;
+        if(buffered>maxBuffered){
+          const skip=buffered-targetBuffered;
+          this.readAt=this.writeAt-targetBuffered;
+          this.latencySamplesDiscarded+=Math.max(0,Math.floor(skip));
+          this.latencyTrims++;
+          // Fade in following a discontinuity; no old voice is replayed.
+          this.gain=0;this.running=false;
+        }
+      } else if(data.type==='mic'){
+        this.micOn=data.enabled;
+        if(!this.micOn)this.micAt=0;
+      } else if(data.type==='clear'){
+        this.writeAt=this.readAt=0;this.running=false;this.gain=0;this.micAt=0;
+      }
+    };
+  }
+  process(inputs,outputs){
+    const input=inputs[0]?.[0];
+    if(this.micOn&&input){
+      for(let i=0;i<input.length;i++){
+        this.mic[this.micAt++]=input[i];
+        if(this.micAt===this.mic.length){
+          const block=this.mic;
+          this.mic=new Float32Array(512);this.micAt=0;
+          this.port.postMessage({type:'mic',values:block},[block.buffer]);
+        }
+      }
+    }
+    const out=outputs[0][0];
+    const queue=this.writeAt-this.readAt;
+    const threshold=Math.max(100,Math.round(this.rate*.085));
+    if(!this.running && queue>=threshold)this.running=true;
+    const target=this.rate*.12;
+    // Mild clock tracking prevents gradual browser/ESP sample-clock drift.
+    const correction=this.running?Math.max(-.015,Math.min(.03,(queue-target)*.000012)):0;
+    const step=this.rate/sampleRate*(1+correction);
+    for(let i=0;i<out.length;i++){
+      const at=Math.floor(this.readAt);
+      if(this.running&&at+1<this.writeAt){
+        const f=this.readAt-at;
+        const a=this.play[at&this.mask],b=this.play[(at+1)&this.mask];
+        this.gain=Math.min(1,this.gain+.004);
+        out[i]=(a+(b-a)*f)*this.gain;
+        this.readAt+=step;
+      } else {
+        if(this.running)this.underruns++;
+        this.running=false;this.gain=0;out[i]=0;
+      }
+    }
+    if(++this.pulse%50===0){
+      this.port.postMessage({type:'stats',bufferMs:1000*(this.writeAt-this.readAt)/this.rate,
+        underruns:this.underruns,dropped:this.dropped,
+        latencyTrims:this.latencyTrims,latencySamplesDiscarded:this.latencySamplesDiscarded});
+    }
+    return true;
+  }
+}
+registerProcessor('cb-duplex-voice-io',DuplexVoiceIO);
+`;
+class DuplexAudio {
+  constructor(onMic=()=>{},onStats=()=>{}){
+    this.onMic=onMic;this.onStats=onStats;this.ctx=null;this.node=null;this.stream=null;this.micSource=null;
+    this.audioMode='voice';this.captureSettings=null;
+  }
+  async open(){
+    if(this.ctx){await this.ctx.resume();return;}
+    const AudioContextClass=globalThis.AudioContext||globalThis.webkitAudioContext;
+    if(!AudioContextClass)throw Error('Web Audio API is unavailable.');
+    let ctx;
+    try{ctx=new AudioContextClass({sampleRate:48000,latencyHint:'interactive'});}catch(_){ctx=new AudioContextClass({latencyHint:'interactive'});}
+    if(!ctx.audioWorklet){await ctx.close();throw Error('AudioWorklet requires a modern browser.');}
+    // A blob created from file:// can become blob:null/... and Chromium may
+    // reject it as a worklet module. A data: module also works for an
+    // unpacked local HTML page, following the CB FM Stereo audio loader.
+    const moduleUrl='data:text/javascript;charset=utf-8,'+encodeURIComponent(source);
+    try{
+      await ctx.audioWorklet.addModule(moduleUrl);
+    }catch(error){
+      await ctx.close().catch(()=>{});
+      throw Error('AudioWorklet module could not load. Use current Chrome/Edge; if opened as a local file, try http://localhost. '+(error?.message||error));
+    }
+    this.ctx=ctx;
+    this.node=new AudioWorkletNode(ctx,'cb-duplex-voice-io',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});
+    this.node.port.onmessage=({data})=>{
+      if(data.type==='mic')this.onMic(data.values);
+      if(data.type==='stats')this.onStats(data);
+    };
+    // Keep the worklet processing even when the microphone is not yet opened.
+    this.silence=ctx.createConstantSource();this.silence.offset.value=0;
+    this.silence.connect(this.node);this.silence.start();
+    this.volume=ctx.createGain();this.volume.gain.value=0.65;
+    this.node.connect(this.volume).connect(ctx.destination);
+    await ctx.resume();
+  }
+  get inputRate(){return this.ctx?.sampleRate??48000;}
+  setVolume(percent){if(this.volume)this.volume.gain.value=Math.max(0,Math.min(1.5,percent/100));}
+  setRate(rate){this.node?.port.postMessage({type:'rate',rate});}
+  play(samples){
+    if(!this.node||!samples.length)return;
+    // No heavy DSP runs on the UI thread; send normalized mono samples directly.
+    this.node.port.postMessage({type:'play',values:samples},[samples.buffer]);
+  }
+  clear(){this.node?.port.postMessage({type:'clear'});}
+  setAudioMode(mode){
+    if(mode!=='voice'&&mode!=='music')throw new RangeError('Unknown audio profile');
+    if(this.stream&&mode!==this.audioMode)throw Error('End the session before changing microphone processing.');
+    this.audioMode=mode;
+  }
+  async startMic(){
+    await this.open();
+    if(this.stream){this.node.port.postMessage({type:'mic',enabled:true});return;}
+    if(!navigator.mediaDevices?.getUserMedia)throw Error('Microphone capture requires a secure context.');
+    // Browser voice enhancement can aggressively gate quiet music and regard
+    // loudspeaker audio as echo. Music requests unprocessed capture instead.
+    const enhance=this.audioMode==='voice';
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,
+      echoCancellation:enhance,noiseSuppression:enhance,autoGainControl:enhance}});
+    this.captureSettings=stream.getAudioTracks()[0]?.getSettings?.()??{};
+    this.stream=stream;
+    this.micSource=this.ctx.createMediaStreamSource(stream);
+    this.micSource.connect(this.node);
+    this.node.port.postMessage({type:'mic',enabled:true});
+  }
+  stopMic(){
+    this.node?.port.postMessage({type:'mic',enabled:false});
+    this.micSource?.disconnect();this.micSource=null;
+    for(const track of this.stream?.getTracks()||[])track.stop();
+    this.stream=null;this.captureSettings=null;
+  }
+  async close(){
+    this.stopMic();
+    this.silence?.stop();this.silence?.disconnect();this.silence=null;
+    this.node?.disconnect();this.volume?.disconnect();this.node=null;
+    if(this.ctx)await this.ctx.close().catch(()=>{});
+    this.ctx=null;
+  }
+}
+scope.CBDuplexAudio=DuplexAudio;
+})(globalThis);
+
+</script>
+<script>
+/* CB Duplex Voice V3 — in-band audio-link diagnostics.
+ * No firmware change: test tones use the existing signed PCM8 TDD stream.
+ * The receiving browser measures RAW PCM and audio-profile-filtered PCM.
+ * Important: measured dBFS and SNR are audio/baseband metrics, NOT RF dBm.
+ */
+(function(scope){
+'use strict';
+const TWO_PI=2*Math.PI;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const DBFS=amp=>20*Math.log10(Math.max(amp,1e-8));
+const HEADER_MS=180, HEADER_GAP_MS=250, STAGE_MS=400, STAGE_GAP_MS=100;
+const SYNC=[1730,2570,1730];
+const BANKS=Object.freeze({
+ full: {label:'Full frequency + level + silence',tag:1100},
+ frequency:{label:'Frequency response',tag:1420},
+ level:{label:'Amplitude / quiet signals',tag:2110},
+ noise:{label:'Silence / TDD noise',tag:2890}
+});
+const FREQS=[1000,80,125,250,500,750,1500,2000,3000,4000,5000,6000,8000];
+const LEVELS=[-6,-12,-18,-24,-30,-36,-42];
+function testStages(bank){
+ if(!BANKS[bank])throw Error('Unknown diagnostic bank');
+ const stages=[{kind:'silence',frequency:0,level:-Infinity,label:'Quiet RF slot'}];
+ if(bank==='full'||bank==='frequency')for(const f of FREQS)stages.push({kind:'frequency',frequency:f,level:-12,label:`${f} Hz`});
+ if(bank==='full'||bank==='level')for(const level of LEVELS)stages.push({kind:'level',frequency:1000,level,label:`1 kHz · ${level} dBFS`});
+ if(bank==='noise')stages.push({kind:'silence',frequency:0,level:-Infinity,label:'Continued silence'});
+ return stages;
+}
+function oscillatorSignal(frequency,rate,index){return Math.sin(TWO_PI*frequency*(index/rate));}
+function toneMagnitude(samples,rate,freq){
+ let re=0,im=0,sumsq=0,valid=0;
+ const w=TWO_PI*freq/rate,cs=Math.cos(w),sn=Math.sin(w);
+ let c=1,s=0;
+ for(let i=0;i<samples.length;i++){
+  const v=samples[i];if(Number.isFinite(v)){re+=v*c;im+=v*s;sumsq+=v*v;valid++;}
+  const nc=c*cs-s*sn;s=s*cs+c*sn;c=nc;
+  if((i&1023)===1023){const norm=Math.hypot(c,s)||1;c/=norm;s/=norm;}
+ }
+ return {amp:valid?2*Math.hypot(re,im)/valid:0,rms:valid?Math.sqrt(sumsq/valid):0,valid};
+}
+function analyzeTone(samples,rate,freq){
+ const n=samples.length;
+ if(n<Math.max(120,Math.floor(rate*.10)))return {frequency:null,amplitude:0,level:-120,snr:null,thd:null,valid:n};
+ const rough=toneMagnitude(samples,rate,freq);
+ const range=Math.max(6,freq*.018),steps=20;
+ let best={amp:-1,freq};
+ for(let j=0;j<=steps;j++){
+  const candidate=freq+range*(j/steps*2-1);
+  const amp=toneMagnitude(samples,rate,candidate).amp;
+  if(amp>best.amp)best={amp,freq:candidate};
+ }
+ const harmonics=[];
+ for(let k=2;k<=3;k++)if(best.freq*k<rate*.48)harmonics.push(toneMagnitude(samples,rate,best.freq*k).amp);
+ const distortion=Math.sqrt(harmonics.reduce((s,a)=>s+a*a,0))/Math.max(best.amp,1e-7)*100;
+ const desiredPower=best.amp*best.amp/2;
+ const residue=Math.max(rough.rms*rough.rms-desiredPower,1e-9);
+ return {frequency:best.freq,amplitude:best.amp,level:DBFS(best.amp),snr:10*Math.log10(Math.max(desiredPower,1e-9)/residue),
+  thd:distortion,valid:rough.valid};
+}
+function analyzeStage(stage,raw,filtered,rate,erasures){
+ let rawMetric,filteredMetric;
+ if(stage.kind==='silence'){
+  const rms=a=>Math.sqrt(a.reduce((s,v)=>s+v*v,0)/Math.max(a.length,1));
+  rawMetric={frequency:null,amplitude:rms(raw),level:DBFS(rms(raw)),snr:null,thd:null};
+  filteredMetric={frequency:null,amplitude:rms(filtered),level:DBFS(rms(filtered)),snr:null,thd:null};
+ }else{
+  rawMetric=analyzeTone(raw,rate,stage.frequency);
+  filteredMetric=analyzeTone(filtered,rate,stage.frequency);
+ }
+ return {...stage,raw:rawMetric,filtered:filteredMetric,erasures,count:raw.length, verdict:'—',gainError:null,reason:''};
+}
+function evaluate(rows,mode){
+ const ref=rows.find(r=>r.kind==='frequency'&&r.frequency===1000) || rows.find(r=>r.kind==='level'&&r.level===-12);
+ const refLevel=ref?.raw.level??null;
+ const noise=rows.find(r=>r.kind==='silence')?.raw.level??-70;
+ for(const row of rows){
+  if(row.kind==='silence'){
+   row.verdict=row.raw.level<-28?'PASS':'WARN';
+   row.reason='Measured idle-slot audio noise, not RF output power';continue;
+  }
+  const wanted=row.frequency;
+  const inband=mode==='music' ? wanted>=80&&wanted<=4500 : wanted>=250&&wanted<=2600;
+  const referenceExpected=row.kind==='level' ? row.level-(-12) : 0;
+  row.gainError=refLevel==null?null:row.raw.level-refLevel-referenceExpected;
+  const detectable=row.raw.level>noise+8 && row.raw.amplitude>0.0015 && row.count>0;
+  const pitch=Number.isFinite(row.raw.frequency)&&Math.abs(row.raw.frequency-wanted)<Math.max(5,wanted*.023);
+  if(!detectable||!pitch){row.verdict='FAIL';row.reason='Tone not distinguishable from noise or incorrect pitch';}
+  else if(row.kind==='level'&&row.level<=-36){row.verdict='WARN';row.reason='Near the resolution limit of 8-bit PCM; inspect trend';}
+  else if(!inband){row.verdict='BAND';row.reason='Outside the nominal voice/music passband; attenuation expected';}
+  else if(row.gainError!==null&&Math.abs(row.gainError)>5){row.verdict='WARN';row.reason='More than 5 dB deviation from 1-kHz reference';}
+  else if(row.raw.snr!==null&&row.raw.snr<9){row.verdict='WARN';row.reason='Tone detected with high residual noise/distortion';}
+  else{row.verdict='PASS';row.reason='Tone detected and within relative level tolerance';}
+  if(row.erasures>row.count*.05&&row.verdict==='PASS'){
+   row.verdict='WARN';row.reason='Excessive transport erasures';
+  }
+ }
+}
+function makeWav(samples,rate){
+ const out=new ArrayBuffer(44+samples.length*2),v=new DataView(out);
+ const str=(p,s)=>{for(let i=0;i<s.length;i++)v.setUint8(p+i,s.charCodeAt(i));};
+ str(0,'RIFF');v.setUint32(4,out.byteLength-8,true);str(8,'WAVE');str(12,'fmt ');
+ v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+ v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+ str(36,'data');v.setUint32(40,samples.length*2,true);
+ for(let i=0;i<samples.length;i++)v.setInt16(44+2*i,Math.round(clamp(samples[i],-1,1)*32767),true);
+ return new Blob([out],{type:'audio/wav'});
+}
+class DiagnosticEngine{
+ constructor({onEvent=()=>{}}={}){
+  this.onEvent=onEvent;this.rate=30000;this.role='off';this.mode='voice';this.autoReturn=false;
+  this.allowSelfLoopback=false;
+  this.tx=null;this.rx=null;this.results=[];this.scan=[];this.scanFirst=0;this.scanState='wait';
+  this.scanCount=0;this.scanBank=null;this.scanStart=0;this.scanLast=0;
+  this.samplesSeen=0;this.cooldownUntil=0;this.returnTimer=null;
+ }
+ configure({rate,role,mode='voice',autoReturn=false}){
+  this.cancel();this.rate=rate;this.role=role;this.mode=mode;this.autoReturn=autoReturn;
+ }
+ emit(type,data={}){this.onEvent({type,...data});}
+ startTx(bank='full',via='manual'){
+  if(this.tx)throw Error('A test transmission is already running.');
+  if(!BANKS[bank])throw Error('Unknown bank');
+  const rate=this.rate, stages=testStages(bank),headerSamples=Math.round(rate*HEADER_MS/1000);
+  const headerGap=Math.round(rate*HEADER_GAP_MS/1000),stageLen=Math.round(rate*STAGE_MS/1000),
+   gapLen=Math.round(rate*STAGE_GAP_MS/1000);
+  const length=4*headerSamples+headerGap+stages.length*(stageLen+gapLen);
+  const data=new Int8Array(length);
+  const header=[...SYNC,BANKS[bank].tag];
+  for(let part=0;part<header.length;part++){
+   const f=header[part];
+   for(let j=0;j<headerSamples;j++){
+    const ramp=Math.min(1,j/(rate*.005),(headerSamples-1-j)/(rate*.005));
+    data[part*headerSamples+j]=Math.round(.36*Math.max(0,ramp)*oscillatorSignal(f,rate,j)*127);
+   }
+  }
+  const bodyStart=4*headerSamples+headerGap;
+  for(let index=0;index<stages.length;index++){
+   const stage=stages[index];if(!stage.frequency)continue;
+   const a=Math.pow(10,stage.level/20),offset=bodyStart+index*(stageLen+gapLen);
+   for(let j=0;j<stageLen;j++){
+    const ramp=Math.min(1,j/(rate*.008),(stageLen-1-j)/(rate*.008));
+    const value=a*Math.max(0,ramp)*oscillatorSignal(stage.frequency,rate,j);
+    data[offset+j]=Math.round(clamp(value,-.98,.98)*127);
+   }
+  }
+  this.tx={bank,via,data,position:0};this.emit('txStart',{bank,via,seconds:length/rate});
+  return length/rate;
+ }
+ render(count,fallback){
+  const t=this.tx;
+  if(!t)return fallback();
+  const result=new Int8Array(count),copy=Math.min(count,t.data.length-t.position);
+  result.set(t.data.subarray(t.position,t.position+copy));
+  if(copy<count)result.set(fallback().subarray(copy),copy);
+  t.position+=copy;
+  const pct=Math.floor(100*t.position/t.data.length);
+  if(pct!==t.progress&&pct%5===0){t.progress=pct;this.emit('txProgress',{percent:pct,bank:t.bank});}
+  if(t.position>=t.data.length){this.tx=null;this.emit('txEnd',{bank:t.bank,via:t.via});}
+  return result;
+ }
+ cancel(){
+  if(this.returnTimer!==null)clearTimeout(this.returnTimer);this.returnTimer=null;
+  this.tx=null;this.rx=null;this.scan=[];this.scanState='wait';this.scanCount=0;this.scanBank=null;
+  this.cooldownUntil=0;
+ }
+ resetScanner(){this.scanState='wait';this.scanCount=0;this.scanBank=null;this.scanStart=0;this.scanLast=0;}
+ feedRx(first,bytes,filtered){
+  if(!Number.isFinite(first)||!(bytes instanceof Int8Array))return;
+  // While transmitting a test, never interpret residual local RF as a remote
+  // benchmark. Local DSP loopback opts into this exception explicitly.
+  if(this.tx&&!this.allowSelfLoopback){this.scan=[];this.resetScanner();return;}
+  if(this.scanFirst===null)this.scanFirst=first;
+  for(let i=0;i<bytes.length;i++){
+   const at=first+i,valid=bytes[i]!==-128,raw=valid?bytes[i]/127:NaN;
+   const audio=filtered?.[i];
+   if(this.rx){this._measureSample(at,raw,Number.isFinite(audio)?audio:0,valid);continue;}
+   if(at<this.cooldownUntil)continue;
+   // Invalid samples occupy time but contribute silence to the preamble detector.
+   this.scan.push(valid?raw:0);
+   const window=Math.max(160,Math.round(this.rate*.020));
+   if(this.scan.length>=window){
+    this._scanWindow(this.scan,at+1-window);
+    this.scan=[];
+   }
+  }
+ }
+ _scanWindow(samples,start){
+  const choices=[1730,2570,1100,1420,2110,2890];
+  let max={freq:0,amp:0},second=0;
+  let rms=0;for(const x of samples)rms+=x*x;rms=Math.sqrt(rms/samples.length);
+  for(const f of choices){
+   const a=toneMagnitude(samples,this.rate,f).amp;
+   if(a>max.amp){second=max.amp;max={freq:f,amp:a};}
+   else if(a>second)second=a;
+  }
+  const heard=rms>.004&&max.amp>rms*.87&&max.amp>second*1.22?max.freq:0;
+  const win=samples.length;
+  if(this.scanState==='wait'){
+   if(heard===1730){if(++this.scanCount===1)this.scanStart=start;}
+   else this.scanCount=0;
+   if(this.scanCount>=4){this.scanState='second';this.scanCount=0;this.scanLast=start;}
+   return;
+  }
+  if(start-this.scanStart>this.rate*2){this.resetScanner();return;}
+  let expected=this.scanState==='second'?2570:this.scanState==='third'?1730:0;
+  if(this.scanState==='bank')expected=0;
+  if(this.scanState==='bank'){
+   if(Object.values(BANKS).some(b=>b.tag===heard)){
+    if(this.scanBank===heard)this.scanCount++;
+    else{this.scanBank=heard;this.scanCount=1;}
+   }else if(heard) this.scanCount=0;
+   if(this.scanCount>=3){
+    const bank=Object.entries(BANKS).find(([,v])=>v.tag===this.scanBank)?.[0];
+    if(bank)this._beginReceive(bank,this.scanStart);
+   }
+   return;
+  }
+  if(heard===expected){this.scanCount++;}
+  else if(heard && heard!==expected && heard!==(this.scanState==='second'?1730:2570)){this.resetScanner();return;}
+  if(this.scanCount>=3){this.scanCount=0;this.scanState=this.scanState==='second'?'third':'bank';}
+ }
+ _beginReceive(bank,syncStart){
+  const rate=this.rate,stages=testStages(bank);
+  const begin=syncStart+Math.round((4*HEADER_MS+HEADER_GAP_MS)*rate/1000);
+  this.rx={bank,stages,begin,stageLength:Math.round(rate*STAGE_MS/1000),gapLength:Math.round(rate*STAGE_GAP_MS/1000),
+   lastProgress:-1,captures:stages.map(()=>({raw:[],filtered:[],erasures:0})),wav:new Float32Array(Math.min(rate*22,900000)),wavAt:0,
+   windowEnd:begin+Math.round(stages.length*(STAGE_MS+STAGE_GAP_MS)*rate/1000),rate};
+  this.scan=[];this.resetScanner();this.emit('rxStart',{bank,direction:this.role==='A'?'Slave → Master':this.role==='B'?'Master → Slave':'Passive reception'});
+ }
+ _measureSample(at,raw,filtered,valid){
+  const r=this.rx;if(!r)return;
+  if(at>=r.windowEnd){this._finishReceive();return;}
+  if(at<r.begin)return;
+  const percent=Math.floor(100*(at-r.begin)/Math.max(1,r.windowEnd-r.begin));
+  if(percent!==r.lastProgress&&percent%5===0){r.lastProgress=percent;this.emit('rxProgress',{percent,bank:r.bank});}
+  const relative=at-r.begin,span=r.stageLength+r.gapLength,index=Math.floor(relative/span);
+  if(index>=r.stages.length)return;
+  const position=relative-index*span;
+  if(r.wavAt<r.wav.length)r.wav[r.wavAt++]=valid?raw:0;
+  if(position<Math.round(r.rate*.075)||position>r.stageLength-Math.round(r.rate*.075))return;
+  const capture=r.captures[index];
+  if(!valid)capture.erasures++;
+  capture.raw.push(valid?raw:0);capture.filtered.push(filtered);
+ }
+ _finishReceive(){
+  const r=this.rx;if(!r)return;
+  const rows=r.stages.map((stage,i)=>{
+   const c=r.captures[i];return analyzeStage(stage,c.raw,c.filtered,r.rate,c.erasures);
+  });
+  evaluate(rows,this.mode);
+  const direction=this.role==='A'?'Slave → Master':this.role==='B'?'Master → Slave':'Passive';
+  const result={bank:r.bank,rows,direction,rate:r.rate,mode:this.mode,createdAt:new Date().toISOString(),
+   wav:r.wav.slice(0,r.wavAt),sampleCount:r.wavAt,from:'RF audio stream'};
+  this.results.unshift(result);if(this.results.length>6)this.results.length=6;
+  this.rx=null;this.cooldownUntil=r.windowEnd+this.rate*.6;
+  this.emit('rxEnd',{result});
+  if(this.role==='B'&&this.autoReturn&&!this.tx){
+   this.emit('autoReturn',{bank:r.bank});
+   this.returnTimer=setTimeout(()=>{this.returnTimer=null;try{this.startTx(r.bank,'automatic reverse');}
+    catch(error){this.emit('error',{message:error.message});}},950);
+  }
+ }
+ latest(){return this.results[0]??null;}
+ static toCsv(result){
+  if(!result)return '';
+  const fields=['direction','bank','kind','expected_hz','tx_dbfs','raw_hz','raw_dbfs','filtered_dbfs','relative_gain_db','raw_snr_db','raw_thd_pct','erasures','verdict','notes'];
+  const esc=x=>`"${String(x??'').replace(/"/g,'""')}"`;
+  return [fields.join(','),...result.rows.map(r=>[
+   result.direction,result.bank,r.kind,r.frequency||'',Number.isFinite(r.level)?r.level:'',
+   r.raw.frequency?.toFixed(2)??'',r.raw.level?.toFixed(2)??'',r.filtered.level?.toFixed(2)??'',
+   r.gainError?.toFixed(2)??'',r.raw.snr?.toFixed(2)??'',r.raw.thd?.toFixed(2)??'',r.erasures,r.verdict,r.reason
+  ].map(esc).join(','))].join('\r\n');
+ }
+ static toWav(result){return makeWav(result.wav,result.rate);}
+ static get BANKS(){return BANKS;}
+ static get STAGE_MS(){return STAGE_MS;}
+}
+scope.CBRadioDiagnosticEngine=DiagnosticEngine;
+if(typeof module==='object'&&module.exports)module.exports={DiagnosticEngine,testStages,toneMagnitude,analyzeTone,evaluate,makeWav};
+})(typeof globalThis==='object'?globalThis:this);
+
+</script>
+<script>
+/* CB Duplex Voice V3 — diagnostic bench presentation and controls. */
+(function(scope){
+'use strict';
+const $=id=>document.getElementById(id);
+const num=(x,d=1)=>Number.isFinite(x)?Number(x).toFixed(d):'—';
+function filename(prefix,ext){return `${prefix}_${new Date().toISOString().replace(/[:.]/g,'-')}.${ext}`;}
+function save(blob,name){
+ const url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download=name;a.hidden=true;document.body.append(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+function renderChart(result,display='both'){
+ const c=$('diagChart'),ctx=c.getContext('2d');if(!ctx)return;
+ const W=c.width,H=c.height,left=69,right=W-25,top=30,bottom=H-44;
+ ctx.fillStyle='#10202a';ctx.fillRect(0,0,W,H);
+ const rows=result?.rows||[];
+ const levels=rows.filter(r=>r.kind==='level');
+ const freq=rows.filter(r=>r.kind==='frequency');
+ const plotLevel=freq.length===0&&levels.length>0;
+ const legend=plotLevel?'Amplitude transfer (1 kHz)':freq.length?'Frequency response relative to 1 kHz':'No response curve in silence-only test';
+ ctx.fillStyle='#d7e5e8';ctx.font='bold 15px system-ui';ctx.fillText(legend,18,21);
+ const axisMin=plotLevel?-48:-30,axisMax=plotLevel?0:10;
+ const yFor=y=>top+(axisMax-y)/(axisMax-axisMin)*(bottom-top);
+ const xFor=x=>plotLevel?left+(x+42)/36*(right-left):left+(Math.log2(x)-Math.log2(80))/(Math.log2(8000)-Math.log2(80))*(right-left);
+ ctx.font='12px system-ui';ctx.strokeStyle='#344b57';ctx.fillStyle='#9fb6bf';ctx.lineWidth=1;
+ for(let y=axisMin;y<=axisMax;y+=plotLevel?12:10){
+  const py=yFor(y);ctx.beginPath();ctx.moveTo(left,py);ctx.lineTo(right,py);ctx.stroke();
+  ctx.textAlign='right';ctx.fillText(`${y} dB`,left-10,py+4);
+ }
+ const labels=plotLevel?[-42,-36,-30,-24,-18,-12,-6]:[80,125,250,500,1000,2000,4000,8000];
+ for(const x of labels){const px=xFor(x);ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,bottom);ctx.stroke();
+  ctx.textAlign='center';ctx.fillText(plotLevel?`${x}`:`${x>=1000?x/1000+'k':x}`,px,bottom+18);
+ }
+ ctx.textAlign='center';ctx.fillText(plotLevel?'Transmitted dBFS':'Audio frequency (Hz)',(left+right)/2,H-7);
+ if(!result){ctx.textAlign='center';ctx.font='14px system-ui';ctx.fillStyle='#90a8b3';ctx.fillText('No measurements — run a diagnostic bank',W/2,H/2);return;}
+ if(!freq.length&&!levels.length){ctx.textAlign='center';ctx.font='14px system-ui';ctx.fillStyle='#90a8b3';ctx.fillText('Silence-only test — see noise level and WAV export',W/2,H/2);return;}
+ const reference=plotLevel?levels.find(r=>r.level===-12):freq.find(r=>r.frequency===1000);
+ const plotted=plotLevel?levels:freq;
+ const drawSeries=(field,color,offset=0)=>{
+  if(display!=='both'&&display!==field)return;
+  const ref=reference?.[field]?.level;
+  const dots=plotted.filter(r=>Number.isFinite(r[field]?.level)).map(r=>({
+    x:xFor(plotLevel?r.level:r.frequency),
+    y:yFor(clamp((r[field].level-ref)+(plotLevel?-12:0),axisMin,axisMax))
+  })).sort((a,b)=>a.x-b.x);
+  ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=2.5;ctx.beginPath();
+  dots.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();
+  dots.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,3.6,0,Math.PI*2);ctx.fill();});
+ };
+ if(plotLevel){ctx.save();ctx.strokeStyle='#aebac4';ctx.setLineDash([5,5]);ctx.beginPath();
+  for(let x=-42;x<=-6;x+=3){const px=xFor(x),py=yFor(x);x===-42?ctx.moveTo(px,py):ctx.lineTo(px,py);}ctx.stroke();ctx.restore();}
+ drawSeries('raw','#6be3c1');drawSeries('filtered','#e7b96c');
+ ctx.textAlign='left';ctx.font='12px system-ui';ctx.fillStyle='#6be3c1';ctx.fillText('● Raw received PCM',left+10,top+16);
+ ctx.fillStyle='#e7b96c';ctx.fillText('● After audio filters',left+200,top+16);
+}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+class DiagnosticUI{
+ constructor(controller,lab){this.controller=controller;this.lab=lab;this.loopActive=false;this.status='Idle';this.latest=null;this.busy=false;}
+ bind(){
+  $('diagStart').addEventListener('click',()=>this.begin());
+  $('diagStop').addEventListener('click',()=>this.stop());
+  $('diagLoopback').addEventListener('click',()=>this.loopback());
+  $('diagAutoReverse').addEventListener('change',()=>{this.lab.autoReturn=$('diagAutoReverse').checked;});
+  $('diagMeasure').addEventListener('change',()=>renderChart(this.latest,$('diagMeasure').value));
+  $('diagCsv').addEventListener('click',()=>{if(this.latest)save(new Blob([CBRadioDiagnosticEngine.toCsv(this.latest)],{type:'text/csv;charset=utf-8'}),filename('duplex_audio_diagnostics','csv'));});
+  $('diagWav').addEventListener('click',()=>{if(this.latest)save(CBRadioDiagnosticEngine.toWav(this.latest),filename('duplex_received_pcm','wav'));});
+  renderChart();this.refresh();
+ }
+ message(text){this.status=text;$('diagStatus').textContent=text;this.controller.log('TEST: '+text);}
+ event(event){
+  switch(event.type){
+   case 'txStart':this.message(`TX ${CBRadioDiagnosticEngine.BANKS[event.bank].label} (${event.seconds.toFixed(1)} s). Mic bypassed.`);$('diagProgress').value=0;break;
+   case 'txProgress':$('diagProgress').value=event.percent;break;
+   case 'txEnd':this.message(event.via==='automatic reverse'?'Slave return bank transmitted.':'TX complete. Waiting for measurements or the reverse bank.');$('diagProgress').value=100;break;
+   case 'rxStart':this.message(`Detected ${event.direction} · capturing ${CBRadioDiagnosticEngine.BANKS[event.bank].label}.`);$('diagProgress').value=0;break;
+   case 'rxProgress':$('diagProgress').value=event.percent;break;
+   case 'rxEnd':this.present(event.result);this.message(`Measured ${event.result.direction} (${event.result.rows.length} stages). Export CSV/WAV on this receiving computer.`);$('diagProgress').value=100;break;
+   case 'autoReturn':this.message('Slave: will transmit the reverse bank in about 1 second.');break;
+   case 'error':this.message('Error: '+event.message);break;
+  }
+  this.refresh();
+ }
+ present(result){
+  this.latest=result;
+  $('diagDirection').textContent=result.direction;
+  const pass=result.rows.filter(r=>r.verdict==='PASS').length;
+  const fail=result.rows.filter(r=>r.verdict==='FAIL').length;
+  const warn=result.rows.filter(r=>r.verdict==='WARN').length;
+  const noise=result.rows.find(r=>r.kind==='silence');
+  $('diagPass').textContent=`${pass} / ${result.rows.length}`;
+  $('diagFailures').textContent=`${warn} warn · ${fail} fail`;
+  $('diagNoise').textContent=noise?`${num(noise.raw.level,1)} dBFS`:'—';
+  $('diagSamples').textContent=Number(result.sampleCount).toLocaleString('en-CA');
+  const body=$('diagRows');body.replaceChildren();
+  for(const row of result.rows){
+   const tr=document.createElement('tr');
+   const cells=[row.kind==='silence'?row.label:row.label,
+      row.kind==='silence'?'—':`${num(row.raw.frequency,1)} Hz`,
+      `${num(row.raw.level,1)} dBFS`,`${num(row.filtered.level,1)} dBFS`,
+      row.gainError===null?'—':`${num(row.gainError,1)} dB`,
+      row.raw.snr===null?'—':`${num(row.raw.snr,1)} dB`,
+      row.raw.thd===null?'—':`${num(row.raw.thd,1)} %`,String(row.erasures)];
+   for(const value of cells){const td=document.createElement('td');td.textContent=value;td.title=row.reason;tr.append(td);}
+   const cell=document.createElement('td'),pill=document.createElement('span');pill.className='diag-result '+row.verdict;pill.textContent=row.verdict;pill.title=row.reason;
+   cell.append(pill);tr.append(cell);body.append(tr);
+  }
+  renderChart(result,$('diagMeasure').value);this.refresh();
+ }
+ refresh(){
+  const role=this.controller.role;const onAir=role==='A'||role==='B';
+  const active=!!this.lab.tx||!!this.lab.rx||!!this.lab.returnTimer;
+  $('diagStart').disabled=this.controller.busy||!onAir||active||this.loopActive;
+  $('diagStart').textContent=role==='A'?'Start Master → Slave benchmark':role==='B'?'Send Slave → Master benchmark':'Start RF benchmark (connect as Master or Slave)';
+  $('diagStop').disabled=!(active||this.loopActive);
+  $('diagLoopback').disabled=this.controller.busy||!!this.controller.port||this.loopActive;
+  $('diagCsv').disabled=!this.latest;
+  $('diagWav').disabled=!this.latest;
+ }
+ begin(){
+  if(!(this.controller.role==='A'||this.controller.role==='B')){this.message('Connect, then start or join a session before transmitting tests.');return;}
+  try{this.lab.startTx($('diagBank').value);this.refresh();}catch(error){this.message(error.message);}
+ }
+ stop(){this.lab.cancel();this.loopActive=false;$('diagProgress').value=0;this.message('Test canceled. Normal microphone audio resumed.');this.refresh();}
+ onRoleChange(){this.lab.cancel();this.refresh();}
+ muteReceived(){return $('diagMute').checked&&(!!this.lab.rx||!!this.lab.tx||this.lab.scanState!=='wait');}
+ async loopback(){
+  if(this.controller.port){this.message('Disconnect the radio before running the local digital loopback.');return;}
+  this.loopActive=true;this.refresh();
+  const sim=new CBRadioDiagnosticEngine({onEvent:event=>{
+   if(event.type==='rxEnd'){
+    const r=event.result;r.direction='Local digital loopback · no RF';r.from='local PCM simulation';this.present(r);
+   }
+  }});
+  const bank=$('diagBank').value;
+  sim.allowSelfLoopback=true;
+  const localProfile=$('audioProfile').value;
+  sim.configure({rate:30000,role:'A',mode:localProfile});
+  const simulatedReceiver=new CBVoiceDsp({rate:30000,inputRate:48000,passive:false,dataSamples:20,
+    audioMode:localProfile,onAudio:()=>{},
+    onDiagnostics:(first,raw,filtered)=>sim.feedRx(first,raw,filtered)});
+  sim.startTx(bank,'local loopback');
+  this.message('Local PCM8 loopback running. These are NOT RF measurements.');
+  try{
+   let position=0,blocks=0;
+   while(sim.tx||sim.rx||position<30000*.95){
+    if(!this.loopActive)break;
+    const bytes=sim.render(256,()=>new Int8Array(256));
+    simulatedReceiver.pushRadio(position,bytes);position+=bytes.length;
+    if(++blocks%32===0)await new Promise(resolve=>setTimeout(resolve,0));
+    if(position>30000*24)throw Error('Loopback exceeded the safety limit');
+    if(!sim.tx&&!sim.rx&&position>30000*2)break;
+   }
+   if(this.loopActive){
+    if(!this.latest||this.latest.from!=='local PCM simulation')throw Error('Loopback receiver did not detect the synchronization pattern');
+    this.message('Digital PCM8 loopback complete (no RF). Connect two stations for a real test.');
+   }
+  }catch(error){this.message('Loopback error: '+error.message);}
+  finally{this.loopActive=false;this.refresh();}
+ }
+}
+scope.CBRadioDiagnosticUI=DiagnosticUI;
+})(globalThis);
+
+</script>
+<script>
+/* CB Duplex Voice — serial protocol and prototype session UI.
+ * START L = passive listening, START A = session clock Master,
+ * START B = complementary Slave TX/RX. Original DPX1 packet/CRC framing.
+ */
+(() => {
+'use strict';
+const el=id=>document.getElementById(id);
+const enc=new TextEncoder();
+const dec=new TextDecoder();
+const FRAME=146, BAUD=460800, STOP_BITS=2;
+const crcTable=Uint16Array.from({length:256},(_,value)=>{
+  let c=value<<8;
+  for(let j=0;j<8;j++)c=((c<<1)^((c&0x8000)?0x1021:0))&0xffff;
+  return c;
+});
+function crc16(data,start,end){
+  let c=0xffff;
+  for(let i=start;i<end;i++)c=((c<<8)^crcTable[((c>>>8)^data[i])&255])&0xffff;
+  return c;
+}
+function timeout(p,ms,label){
+  let handle;
+  return Promise.race([p,new Promise((_,rej)=>handle=setTimeout(()=>rej(Error(label)),ms))])
+    .finally(()=>clearTimeout(handle));
+}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+function formatNumber(n){return Math.round(n).toLocaleString('en-CA');}
+class SerialSession {
+  constructor(port,role,config,{onReady,onPacket,onFatal,onLine}={}){
+    this.port=port;this.role=role;this.config=config;
+    this.onReady=onReady??(()=>{});this.onPacket=onPacket??(()=>{});
+    this.onFatal=onFatal??(()=>{});this.onLineText=onLine??(()=>{});
+    this.ready=false;this.closing=false;this.line=[];this.buffer=new Uint8Array(0);
+    this.readyResolve=null;this.readyReject=null;this.endResolve=null;
+    this.statusResolve=null;this.statusReject=null;
+    this.expected=null;this.loss=0;this.frames=0;this.crcErrors=0;
+    this.txRequested=0;this.consumed=0;this.consumedLow=0;this.lastCredit=null;
+    this.pendingRender=false;this.writeChain=Promise.resolve();this.lastPacket=null;
+  }
+  async start(){
+    this.statusPromise=new Promise((resolve,reject)=>{this.statusResolve=resolve;this.statusReject=reject;});
+    this.readyPromise=new Promise((resolve,reject)=>{this.readyResolve=resolve;this.readyReject=reject;});
+    this.endPromise=new Promise(resolve=>this.endResolve=resolve);
+    this.statusPromise.catch(()=>{});this.readyPromise.catch(()=>{});
+    await this.port.open({baudRate:BAUD,dataBits:8,stopBits:STOP_BITS,
+      parity:'none',flowControl:'none',bufferSize:8192});
+    this.reader=this.port.readable.getReader();
+    this.writer=this.port.writable.getWriter();
+    this.readTask=this.readLoop();
+    // Flush a stale RF stream left by a previous browser close.
+    await this.send(Uint8Array.of(0x80,10));
+    await wait(120);
+    for(let attempt=0;attempt<10;attempt++){
+      await this.send(enc.encode('STATUS\n'));
+      const ok=await Promise.race([this.statusPromise,wait(350).then(()=>false)]);
+      if(ok)break;
+      if(attempt===9)throw Error('No compatible ESP8266 duplex firmware found.');
+    }
+    const c=this.config;
+    const fields=[this.role,c.data,c.guard,c.frequency,c.power,c.rfGain,c.vga,0,0,c.bbGain];
+    await this.send(enc.encode('START '+fields.join(' ')+'\n'));
+    await timeout(this.readyPromise,5000,'The radio did not reply READY.');
+    if(this.role!=='L')this.pump();
+    this.watchdog=setInterval(()=>{
+      if(this.closing||!this.ready)return;
+      if(this.role!=='L'&&this.lastPacket!==null&&performance.now()-this.lastPacket>3500){
+        this.onFatal(Error('The radio stopped delivering DPX1 frames.'));
+      }
+    },750);
+  }
+  send(data){
+    const next=this.writeChain.then(()=>this.writer.write(data));
+    this.writeChain=next.catch(()=>{});
+    return next;
+  }
+  async readLoop(){
+    try{
+      while(!this.closing){
+        const {value,done}=await this.reader.read();
+        if(done)break;
+        if(value?.length)this.read(value);
+      }
+    }catch(error){if(!this.closing)this.onFatal(error);}
+    finally{
+      try{this.reader.releaseLock();}catch(_){}
+      this.reader=null;
+    }
+    if(!this.closing)this.onFatal(Error('Serial connection was interrupted.'));
+  }
+  read(data){
+    let pos=0;
+    while(!this.ready&&pos<data.length){
+      const value=data[pos++];
+      if(value===10){
+        this.handleLine(dec.decode(Uint8Array.from(this.line)).trim());
+        this.line=[];
+      }else if(this.line.length<200)this.line.push(value);
+    }
+    if(pos===data.length)return;
+    const rest=data.subarray(pos),b=new Uint8Array(this.buffer.length+rest.length);
+    b.set(this.buffer);b.set(rest,this.buffer.length);
+    let i=0;
+    while(i+3<b.length){
+      if(b[i]===69&&b[i+1]===78&&b[i+2]===68&&b[i+3]===32){
+        const end=b.indexOf(10,i);
+        if(end<0)break;
+        this.handleLine(dec.decode(b.subarray(i,end)).trim());i=end+1;continue;
+      }
+      if(b[i]!==68||b[i+1]!==80||b[i+2]!==88||b[i+3]!==49){i++;continue;}
+      if(i+FRAME>b.length)break;
+      const view=new DataView(b.buffer,b.byteOffset+i,FRAME);
+      if(view.getUint16(12,true)!==128 || view.getUint16(144,true)!==crc16(b,i+4,i+144)){
+        this.crcErrors++;i++;continue;
+      }
+      const first=view.getUint32(4,true),used=view.getUint32(8,true),flags=view.getUint16(14,true);
+      const copied=new Int8Array(b.subarray(i+16,i+144));
+      this.handlePacket(first,used,flags,copied);i+=FRAME;
+    }
+    this.buffer=b.slice(i);
+    if(this.buffer.length>4096)this.buffer=this.buffer.slice(-4);
+  }
+  handleLine(line){
+    this.onLineText(line);
+    if(line===`DUPLEX 1 ${BAUD} 1`)this.statusResolve(true);
+    if(line===`DUPLEX 1 ${BAUD} 0`)this.statusReject(Error('The ESP8266 must run at 160 MHz.'));
+    const m=line.match(/^READY (\d+) (\d+) (\d+) (\d+)$/);
+    if(m&&!this.ready&&!this.closing){
+      this.ready=true;this.rate=Number(m[1]);
+      this.onReady(this.rate);
+      this.readyResolve(this.rate);
+    }
+    if(line.startsWith('ERR '))this.readyReject(Error(line));
+    if(line.startsWith('END '))this.endResolve();
+  }
+  handlePacket(first,used,flags,data){
+    this.lastPacket=performance.now();this.frames++;
+    const delta=(used-this.consumedLow)>>>0;
+    if(delta&&delta<=0x7fffffff){
+      this.consumed+=delta;this.consumedLow=used;this.lastCredit=this.lastPacket;
+    }
+    let missing=0;
+    if(this.expected!==null){
+      missing=(first-this.expected)>>>0;
+      if(missing>0x7fffffff)return; // late frame
+    }
+    if(missing){
+      this.loss+=missing;
+      // Recover sample-index continuity without allocating huge bursts.
+      const count=Math.min(8192,missing);
+      this.onPacket(first-count,new Int8Array(count).fill(-128),flags);
+    }
+    this.expected=(first+128)>>>0;
+    this.onPacket(first,data,flags);
+    if(this.role!=='L')this.pump();
+  }
+  pump(){
+    if(!this.ready||this.closing||this.pendingRender||this.role==='L')return;
+    const count=Math.max(0,Math.min(1536,this.config.lead-(this.txRequested-this.consumed)));
+    if(count<128)return;
+    this.pendingRender=true;this.txRequested+=count;
+    let samples;
+    try{samples=this.config.render(count);}catch(error){this.pendingRender=false;this.onFatal(error);return;}
+    // 0x80 is a STOP control byte in firmware; audio output must avoid it.
+    for(let i=0;i<samples.length;i++)if(samples[i]===-128)samples[i]=-127;
+    this.send(new Uint8Array(samples.buffer,samples.byteOffset,samples.byteLength)).then(()=>{
+      this.pendingRender=false;this.pump();
+    },error=>{this.pendingRender=false;this.onFatal(error);});
+  }
+  async close(){
+    if(this.closing)return;
+    this.closing=true;clearInterval(this.watchdog);
+    try{
+      if(this.writer){
+        await timeout(this.send(Uint8Array.of(0x80)),1200,'STOP timed out').catch(()=>{});
+        if(this.ready)await timeout(this.endPromise,1500,'END timed out').catch(()=>{});
+      }
+    }catch(_){}
+    try{await this.reader?.cancel();}catch(_){}
+    try{await timeout(this.readTask??Promise.resolve(),1500,'Read stop timed out');}catch(_){}
+    try{this.writer?.releaseLock();}catch(_){}
+    try{await this.port.close();}catch(_){}
+    this.reader=this.writer=null;this.ready=false;
+  }
+}
+class Controller {
+  constructor(){
+    this.port=null;this.session=null;this.dsp=null;this.busy=false;
+    this.role='off';this.lastMaster=-Infinity;this.lastSpeaker=-Infinity;
+    this.audio=new CBDuplexAudio(mic=>this.dsp?.pushMic(mic),stats=>{
+      el('audioBuffer').textContent=Math.max(0,stats.bufferMs).toFixed(0)+' ms';
+      el('underruns').textContent=formatNumber(stats.underruns);
+      el('latencyTrims').textContent=formatNumber(stats.latencyTrims||0);
+    });
+    this.lab=new CBRadioDiagnosticEngine({onEvent:event=>this.diagUI?.event(event)});
+    this.diagUI=new CBRadioDiagnosticUI(this,this.lab);
+    this.lines=[];
+    this.bind();this.diagUI.bind();this.draw();
+  }
+  log(message){
+    this.lines.push(`[${new Date().toLocaleTimeString('en-CA')}] ${message}`);
+    if(this.lines.length>100)this.lines.shift();
+    el('log').textContent=this.lines.join('\n');el('log').scrollTop=el('log').scrollHeight;
+  }
+  error(e){this.log('ERROR: '+e.message);el('error').textContent=e.message;}
+  readOptions(){
+    const frequency=Math.round(Number(el('frequency').value));
+    const data=Number(el('dataSamples').value),guard=Number(el('guardSamples').value);
+    const audioMode=el('audioProfile').value;
+    const power=Number(el('txPower').value);
+    const rfGain=Number(el('rfGain').value),vga=Number(el('vga').value),bbGain=Number(el('bbGain').value);
+    if(!Number.isInteger(frequency)||frequency<2400000||frequency>2483500||
+       !Number.isInteger(data)||data<12||data>20||data%2!==0||
+       !Number.isInteger(guard)||guard<4||guard>30||
+       !Number.isInteger(power)||power<0||power>191||
+       !['voice','music'].includes(audioMode)||
+       ![0,1,2,3,4,5,6,7].includes(rfGain)||vga<0||vga>7||bbGain<0||bbGain>32)
+      throw Error('Check radio frequency, audio profile, even slot length, guard and gain settings.');
+    const logical=Math.floor(120000*data/(2*(data+12+guard)));
+    if(logical*146*12>=460800*128*.96)
+      throw Error('Slot configuration leaves less than 4% UART headroom. Use a longer guard or fewer data samples.');
+    return {frequency,data,guard,power,rfGain,vga,bbGain,audioMode,lead:6144};
+  }
+  bind(){
+    el('connect').addEventListener('click',()=>this.connect());
+    el('ptt').addEventListener('click',()=>this.ptt());
+    el('endSession').addEventListener('click',()=>this.endSession());
+    el('disconnect').addEventListener('click',()=>this.disconnect());
+    el('volume').addEventListener('input',()=>this.audio.setVolume(+el('volume').value));
+    el('timingPreset').addEventListener('change',()=>{
+      const choice=el('timingPreset').value;
+      if(choice!=='custom'){
+        const [d,g]=choice.split(':').map(Number);
+        el('dataSamples').value=d;el('guardSamples').value=g;
+      }
+      this.updateTimingPreview();
+    });
+    for(const id of ['dataSamples','guardSamples'])el(id).addEventListener('input',()=>{
+      const value=`${el('dataSamples').value}:${el('guardSamples').value}`;
+      el('timingPreset').value=[...el('timingPreset').options].some(o=>o.value===value)?value:'custom';
+      this.updateTimingPreview();
+    });
+    el('audioProfile').addEventListener('change',()=>{
+      const mode=el('audioProfile').value;
+      this.audio.setAudioMode(mode);
+      this.dsp?.setAudioMode(mode);
+      this.lab.mode=mode;
+      this.log(`Audio profile selected: ${mode==='voice'?'Voice':'Music / Raw'}.`);
+    });
+    this.updateTimingPreview();
+    el('rfGain').addEventListener('change',()=>{
+      const automatic=+el('rfGain').value===7;
+      el('vga').disabled=automatic;el('bbGain').disabled=automatic;
+    });
+    window.addEventListener('pagehide',()=>{void this.disconnect();});
+    document.addEventListener('keydown',event=>{
+      if(event.code!=='Space'||event.repeat||this.busy)return;
+      if(['INPUT','SELECT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName))return;
+      if(this.port&&this.role==='L'){event.preventDefault();void this.ptt();}
+    });
+  }
+  updateTimingPreview(){
+    const data=Number(el('dataSamples').value),guard=Number(el('guardSamples').value);
+    const rate=Math.floor(120000*data/(2*(data+12+guard)));
+    const cycles=120000/(2*(data+12+guard));
+    const valid=Number.isInteger(data)&&data>=12&&data<=20&&data%2===0&&
+      Number.isInteger(guard)&&guard>=4&&guard<=30&&
+      rate*146*12<460800*128*.96;
+    el('timingPreview').textContent=valid?
+      `${data}/${guard} · ${formatNumber(cycles)} TX bursts/s · ${formatNumber(rate)} logical samples/s per direction.`:
+      'Invalid timing or insufficient UART bandwidth. Choose a preset.';
+    el('timingPreview').classList.toggle('warning',!valid);
+  }
+  draw(){
+    const listening=this.role==='L',onAir=this.role==='A'||this.role==='B';
+    const remote=performance.now()-this.lastMaster<2600;
+    const taken=performance.now()-this.lastSpeaker<1700;
+    el('connection').textContent=this.port?this.busy?'Switching radio…':'ESP8266 connected':'Port closed';
+    el('role').textContent=this.role==='off'?'OFF':this.role==='A'?'MASTER · hands-free':
+      this.role==='B'?'SLAVE SPEAKER · hands-free':remote?'PASSIVE · session detected':'PASSIVE · scanning';
+    el('role').dataset.role=this.role;
+    el('peer').textContent=remote?'TDD carrier detected':'No remote Master detected';
+    el('speaker').textContent=listening?(taken?'Reply slot occupied':'Reply slot available'):
+      this.role==='B'?'This station occupies the reply slot':this.role==='A'?'Awaiting one Slave speaker':'—';
+    el('connect').disabled=this.busy||!!this.port;
+    el('ptt').disabled=this.busy||!this.port||onAir;
+    el('ptt').textContent=remote?'PTT — Join as speaker':'PTT — Start session';
+    el('endSession').disabled=this.busy||!onAir;
+    el('disconnect').disabled=this.busy||!this.port;
+    el('session').textContent=onAir?'Both microphones can speak at once. Release PTT; talk hands-free.':
+      'Press PTT once to start a session, or join an existing Master.';
+    for(const id of ['frequency','timingPreset','dataSamples','guardSamples','txPower','rfGain','vga','bbGain']){
+      el(id).disabled=this.busy||!!this.port;
+    }
+    el('audioProfile').disabled=this.busy||onAir;
+    el('volume').disabled=!this.audio.ctx;
+    this.diagUI?.refresh();
+  }
+  async connect(){
+    if(this.busy||this.port)return;
+    this.busy=true;this.draw();el('error').textContent='';
+    try{
+      if(!navigator.serial)throw Error('Web Serial requires desktop Chrome/Edge and a secure context.');
+      this.port=await navigator.serial.requestPort();
+      await this.audio.open();this.audio.setVolume(+el('volume').value);
+      await this.switchRole('L');
+      this.log('Listening. Press PTT to become Master, or to join an existing session.');
+    }catch(e){this.error(e);await this.cleanup();}
+    finally{this.busy=false;this.draw();}
+  }
+  async switchRole(role){
+    if(this.session){await this.session.close();this.session=null;}
+    this.lab.cancel();
+    this.audio.clear();
+    this.dsp=null;
+    if(role==='L')this.audio.stopMic();
+    const config=this.readOptions();
+    this.audio.setAudioMode(config.audioMode);
+    if(role!=='L')await this.audio.startMic();
+    const session=new SerialSession(this.port,role,{...config,render:count=>this.lab.render(count,()=>this.dsp.render(count,true))},{
+      onReady:rate=>{
+        if(this.session!==session)return;
+        this.lab.configure({rate,role,mode:config.audioMode,autoReturn:el('diagAutoReverse').checked});
+        this.dsp=new CBVoiceDsp({rate,inputRate:this.audio.inputRate,passive:role==='L',dataSamples:config.data,
+          audioMode:config.audioMode,
+          onAudio:(samples,playbackRate)=>{if(!this.diagUI.muteReceived())this.audio.play(samples);},
+          onDiagnostics:(first,raw,filtered)=>this.lab.feedRx(first,raw,filtered)});
+        this.audio.setRate(role==='L'?rate/2:rate);
+        this.role=role;
+        el('sampleRate').textContent=(rate/(role==='L'?2:1)).toFixed(0)+' samples/s';
+        this.log(`READY ${role} · ${formatNumber(rate)} transport samples/s · ${config.data}+${config.guard} active/guard · ${config.audioMode} audio`);
+        this.draw();
+      },
+      onPacket:(index,samples,flags)=>{
+        if(this.session!==session)return;
+        this.dsp?.pushRadio(index,samples);
+        if(role==='L'){
+          const now=performance.now();
+          if(flags&1)this.lastMaster=now;
+          if(flags&4)this.lastSpeaker=now;
+        }
+        el('samplesLost').textContent=formatNumber(session.loss);
+        el('crcErrors').textContent=formatNumber(session.crcErrors);
+        el('frames').textContent=formatNumber(session.frames);
+        el('sync').textContent=flags&1?'LOCKED':'SEARCHING';
+        if(session.frames%6===0)this.draw();
+      },
+      onFatal:e=>{if(this.session===session&&!this.busy){this.error(e);void this.endSession();}},
+      onLine:line=>{if(line.startsWith('END '))this.log('ESP stopped: '+line.slice(0,120));}
+    });
+    this.session=session;
+    try{await session.start();}catch(e){await session.close();if(this.session===session)this.session=null;throw e;}
+  }
+  async ptt(){
+    if(this.busy||!this.port||this.role!=='L')return;
+    this.busy=true;this.draw();el('error').textContent='';
+    try{
+      // Listen-before-talk with random contention delay. This lowers the
+      // probability of collision but is NOT a distributed grant protocol.
+      await wait(80+Math.floor(Math.random()*260));
+      const masterPresent=performance.now()-this.lastMaster<2600;
+      const busySpeaker=performance.now()-this.lastSpeaker<1700;
+      if(masterPresent&&busySpeaker){
+        throw Error('The reply slot appears occupied. Remain in passive listening mode.');
+      }
+      const role=masterPresent?'B':'A';
+      this.log(role==='A'?'PTT: requesting Master session…':'PTT: joining the Master as the only Slave speaker…');
+      await this.switchRole(role);
+      this.log(role==='A'?'Master active; microphone is open.':'Slave speaker active; microphone is open.');
+    }catch(e){this.error(e);await this.returnToListen();}
+    finally{this.busy=false;this.draw();}
+  }
+  async returnToListen(){
+    this.audio.stopMic();
+    if(!this.port)return;
+    try{await this.switchRole('L');}catch(e){this.error(e);await this.cleanup();}
+  }
+  async endSession(){
+    if(this.busy||!this.port||this.role==='L')return;
+    this.busy=true;this.draw();
+    try{await this.returnToListen();this.log('Session ended; resumed passive listening.');}
+    finally{this.busy=false;this.draw();}
+  }
+  async cleanup(){
+    if(this.session){await this.session.close();this.session=null;}
+    this.lab.cancel();this.diagUI.refresh();
+    this.audio.stopMic();await this.audio.close();
+    this.port=null;this.role='off';this.dsp=null;
+    this.lastMaster=this.lastSpeaker=-Infinity;
+    for(const id of ['sync','sampleRate'])el(id).textContent='—';
+    for(const id of ['samplesLost','crcErrors','frames','underruns','latencyTrims'])el(id).textContent='0';
+    el('audioBuffer').textContent='0 ms';
+  }
+  async disconnect(){
+    if(this.busy||!this.port)return;
+    this.busy=true;this.draw();
+    try{await this.cleanup();this.log('Radio disconnected.');}
+    catch(e){this.error(e);}
+    finally{this.busy=false;this.draw();}
+  }
+}
+const controller=new Controller();
+setInterval(()=>{if(!controller.busy&&controller.port)controller.draw();},600);
+// Expose only diagnostic state to the developer console.
+globalThis.CBDuplexVoice={status:()=>({role:controller.role,frames:controller.session?.frames??0,
+    lost:controller.session?.loss??0,crc:controller.session?.crcErrors??0,
+    audioMode:controller.dsp?.audioMode??el('audioProfile').value,
+    timing:`${el('dataSamples').value}/${el('guardSamples').value}`,
+    diagnostic:{tx:!!controller.lab.tx,rx:!!controller.lab.rx,results:controller.lab.results.length}})};
+})();
+
+</script>
+</body>
+</html>

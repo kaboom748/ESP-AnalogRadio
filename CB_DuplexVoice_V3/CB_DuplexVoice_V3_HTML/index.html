@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CB Duplex Voice V3 · 2.4 GHz</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header class="page-head">
+    <div><p class="eyebrow">Experimental FM radio · One ESP8266 per station</p>
+      <h1>CB Duplex Voice <span class="version-tag">V3</span></h1>
+      <p class="sub">Warm TDD · hands-free two-way speech · passive group monitoring</p></div>
+    <span class="chip" id="connection">Port closed</span>
+  </header>
+  <section class="panel station">
+    <div class="station-top">
+      <div class="radio-icon" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none"><path d="M14 35H50V54H14V35ZM20 35V19L46 9M23 43H39M23 48H39" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><circle cx="46" cy="44" r="6" stroke="currentColor" stroke-width="3"/></svg></div>
+      <div><span class="kicker">RADIO STATUS</span><h2 id="role" data-role="off">OFF</h2>
+        <p id="session">Press PTT once to start a session, or join an existing Master.</p></div>
+    </div>
+    <div class="status-grid">
+      <div><span>Synchronization</span><strong id="sync">—</strong></div>
+      <div><span>Remote Master</span><strong id="peer">No remote Master detected</strong></div>
+      <div><span>Reply channel</span><strong id="speaker">—</strong></div>
+      <div><span>Audio rate</span><strong id="sampleRate">—</strong></div>
+    </div>
+    <div class="buttons">
+      <button class="button primary" id="connect" type="button">Connect &amp; Listen</button>
+      <button class="button ptt" id="ptt" type="button" disabled>PTT — Start session</button>
+      <button class="button" id="endSession" type="button" disabled>End Session</button>
+      <button class="button" id="disconnect" type="button" disabled>Disconnect</button>
+    </div>
+    <p class="hint">PTT starts the session; release it and speak hands-free. Other stations can remain passive listeners. A Slave can occupy the reply slot only if it appears free.</p>
+    <p id="error" class="error" role="alert" aria-live="polite"></p>
+  </section>
+  <div class="two-col">
+    <section class="panel">
+      <h2>Radio settings</h2>
+      <p class="sub">Set the same RF frequency and slot timing on all stations <strong>before connecting</strong>.</p>
+      <div class="two-col form-grid">
+        <label>RF frequency (kHz)<input id="frequency" type="number" min="2400000" max="2483500" step="1" value="2442312"></label>
+        <label>TX power (APWR)<input id="txPower" type="number" min="0" max="191" value="63"></label>
+        <label>TDD timing preset<select id="timingPreset">
+          <option value="12:4">Original · 12 / 4 · 2,143 slots/s</option>
+          <option value="16:4">Moderate · 16 / 4 · 1,875 slots/s</option>
+          <option value="20:8" selected>Longer + guard · 20 / 8 · 1,500 slots/s</option>
+          <option value="20:12">Slowest · 20 / 12 · 1,364 slots/s</option>
+          <option value="custom">Custom timing</option>
+        </select></label>
+        <label>Audio profile<select id="audioProfile">
+          <option value="voice" selected>Voice — speech optimized</option>
+          <option value="music">Music / Raw — preserve quiet audio</option>
+        </select></label>
+        <label>Data samples / slot<input id="dataSamples" type="number" min="12" max="20" step="2" value="20"></label>
+        <label>Guard samples<input id="guardSamples" type="number" min="4" max="30" value="8"></label>
+        <label>RX RF gain<select id="rfGain"><option value="7">Automatic</option><option value="0" selected>0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select></label>
+        <label>RX VGA gain<input id="vga" type="number" min="0" max="7" value="0"></label>
+        <label>RX baseband gain<input id="bbGain" type="number" min="0" max="32" value="16"></label>
+        <label>Speaker volume <input type="range" id="volume" min="0" max="100" value="65"></label>
+      </div>
+      <p class="hint" id="timingPreview">20/8 · 1,500 TX bursts/s · 30,000 logical samples/s per direction.</p>
+      <p class="hint">Music / Raw requests browser echo cancellation, noise suppression and AGC OFF, and widens the mono audio filters. Use headphones, especially in Music mode. Both stations must use the same timing values (audio profiles may differ).</p>
+      <p class="hint">ESP8266 at 160 MHz · USB serial 460,800 baud 8N2 · signed PCM8 · one RF channel. The radio retunes only when the session starts, not between TDD slots.</p>
+    </section>
+    <section class="panel">
+      <h2>Receive &amp; playback</h2>
+      <div class="info-row"><span>Receive sample gaps</span><strong id="samplesLost">0</strong></div>
+      <div class="info-row"><span>Transport CRC failures</span><strong id="crcErrors">0</strong></div>
+      <div class="info-row"><span>Valid DPX1 frames</span><strong id="frames">0</strong></div>
+      <div class="info-row"><span>Audio buffer</span><strong id="audioBuffer">0 ms</strong></div>
+      <div class="info-row"><span>Audio underruns</span><strong id="underruns">0</strong></div>
+      <div class="info-row"><span>Old audio discarded (latency recovery)</span><strong id="latencyTrims">0</strong></div>
+      <div class="notice">Use headphones to avoid acoustic feedback. Voice mode requests browser noise suppression and echo cancellation; Music / Raw requests them OFF. Browser and microphone hardware may still process the audio.</div>
+      <div class="notice">V3 quiet-slot protection: Master RX stays silent when the Slave timing marker is not detected. Real audio is accepted only after a valid RF marker, so an idle RX window is no longer played as remote speech.</div>
+      <div class="notice amber">Prototype limitation: simultaneous Master attempts and multiple Slave join attempts can still collide; automatic distributed arbitration is not yet proven on RF hardware.</div>
+    </section>
+  </div>
+  <section class="panel diagnostic-panel" id="diagnosticPanel">
+    <details id="diagDetails" open>
+      <summary>RF &amp; Audio Diagnostics — Test Bench</summary>
+      <p class="sub">Transmits a known PCM8 test sequence over the existing TDD link. Measures received <strong>raw PCM before the audio filters</strong> and the locally filtered playback signal. No microphone, loudspeaker or SDR is required for the measurement.</p>
+      <div class="two-col form-grid diag-form">
+        <label>Test bank<select id="diagBank">
+          <option value="full" selected>Full bank — frequency, amplitude and silence</option>
+          <option value="frequency">Frequency response only</option>
+          <option value="level">Quiet audio / level sweep only</option>
+          <option value="noise">TDD silence / residual noise only</option>
+        </select></label>
+        <label>Receive analysis<select id="diagMeasure"><option value="both" selected>Raw PCM + Filtered PCM</option><option value="raw">Raw PCM emphasis</option><option value="filtered">Filtered PCM emphasis</option></select></label>
+      </div>
+      <div class="diag-checks">
+        <label><input id="diagAutoReverse" type="checkbox" checked> Auto-return test from Slave to Master after a received Master bank</label>
+        <label><input id="diagMute" type="checkbox" checked> Mute received test tones locally</label>
+      </div>
+      <div class="buttons diag-buttons">
+        <button type="button" class="button primary" id="diagStart" disabled>Start RF benchmark</button>
+        <button type="button" class="button" id="diagStop" disabled>Stop test</button>
+        <button type="button" class="button" id="diagLoopback">Run digital loopback (no radio)</button>
+        <button type="button" class="button" id="diagCsv" disabled>Export CSV</button>
+        <button type="button" class="button" id="diagWav" disabled>Export received WAV</button>
+      </div>
+      <div class="diag-progress"><progress id="diagProgress" max="100" value="0"></progress>
+        <span id="diagStatus" aria-live="polite">Ready for a bench test. Connect both stations as Master and Slave speaker first.</span></div>
+      <div class="diag-results-head">
+        <h2>Latest received test</h2><span class="chip" id="diagDirection">No results yet</span>
+      </div>
+      <div class="diag-metrics">
+        <div><span>Tones accepted</span><strong id="diagPass">—</strong></div>
+        <div><span>Warnings / failed</span><strong id="diagFailures">—</strong></div>
+        <div><span>Noise (raw)</span><strong id="diagNoise">—</strong></div>
+        <div><span>Received samples</span><strong id="diagSamples">—</strong></div>
+      </div>
+      <canvas id="diagChart" width="960" height="310" role="img" aria-label="Measured relative frequency response in dB"></canvas>
+      <div class="table-scroller"><table class="diag-table">
+        <thead><tr><th>Signal TX</th><th>RX frequency</th><th>Raw RX</th><th>Filtered RX</th><th>Rel. level</th><th>Raw SNR</th><th>THD est.</th><th>Lost</th><th>Result</th></tr></thead>
+        <tbody id="diagRows"><tr><td colspan="9" class="empty">Run the loopback or receive a test bank to populate the measurements.</td></tr></tbody>
+      </table></div>
+      <div class="notice">Interpretation: <strong>PASS / WARN / FAIL</strong> is based on detected tones, relative gain, noise and lost samples. <strong>BAND</strong> means an intentionally filtered voice/music frequency. PCM dBFS is <em>not RF power in dBm</em>; precise RF deviation, occupied bandwidth and spurs still require an SDR measurement.</div>
+      <div class="notice amber">With the V2 firmware, a Master can initiate a full benchmark and a participating Slave can automatically return the same bank. The Master sees the Slave → Master measurements; the Slave sees Master → Slave. Results are stored on the <strong>receiving</strong> computer, and are not telemetered to the other computer. Use the two CSV files for a complete comparison.</div>
+    </details>
+  </section>
+  <section class="panel">
+    <details><summary>Technical diagnostics and operating notes</summary>
+      <p>The original V22 PHY and packet format are preserved. Passive role <code>START L</code> does not transmit. It alternates listening to both RF slots and takes every second sample, so two voices can be mixed through the same 460,800-baud serial link.</p>
+      <p>The first received marker establishes passive slot parity; the two sources are mixed, so either initial parity still produces both voices. The "Reply channel occupied" indicator is advisory; it cannot resolve truly simultaneous requests.</p>
+      <p>The stream is mono (Voice narrowband, Music / Raw wider but not hi-fi). FM stereo, 19-kHz pilot, RDS and 75-µs emphasis are deliberately not part of this independent duplex prototype. Existing CB FM Stereo V12 remains untouched.</p>
+    </details>
+    <h2 class="log-title">Event log</h2>
+    <pre id="log" aria-live="off"></pre>
+  </section>
+  <footer>CB Duplex Voice V3 · RF &amp; Audio Diagnostics · standalone experimental prototype · open locally with Chrome/Edge or from localhost</footer>
+</main>
+<script src="voice-dsp.js"></script>
+<script src="audio-engine.js"></script>
+<script src="diagnostics.js"></script>
+<script src="diagnostics-ui.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
