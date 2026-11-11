@@ -1,0 +1,51 @@
+CB DUPLEX VOICE V6 — RÉSULTATS DES TESTS LOGICIELS
+=================================================
+
+Périmètre : CB_V5 -> CB_V6, nouvel UART 921600 bauds 8N2, plus aucune
+suppression d'un échantillon sur deux en écoute passive, deux voix reconstruites
+à leur fréquence d'échantillonnage logique complète (30000 Hz avec TDD 20/8).
+
+VALIDÉ PAR TESTS AUTOMATISÉS :
+- PASS — Analyse syntaxique de tous les scripts JS (node --check).
+- PASS — Analyse de syntaxe C++17 du fichier .ino avec de faux en-têtes
+         Arduino/ESP8266 (g++ -fsyntax-only). Ce n'est PAS une compilation
+         avec le véritable Arduino ESP8266 core ni la génération d'un .bin.
+- PASS — 12 tests Node (tests/test_v6.js) : vitesse et 8N2, format DPX1,
+         cadence RF d'origine, tampon augmenté, absence de décimation, calcul
+         de capacité UART et protection 4%, presets 12/4, 16/4, 20/8, 20/12,
+         refus 20/4 trop rapide, multiplexage 20+20, audio des deux voies,
+         tonalité à 6100 Hz comparée à la réception active, trous/effacements,
+         filtres audio et encoches TDD, mu-law et sortie PCM, intégrité de la
+         version HTML autonome.
+- PASS — 2 essais d'interface Chromium (tests/browser_regression.py), testant
+         la page modulaire mise en ligne en mémoire et le standalone :
+         chargement JS/CSS/image, onglets Easy/Advanced, prévisualisation des
+         timings, refus de 20/4, banc de mesure local / affichage de résultats.
+- PASS — Simulation complète du port Web Serial dans Chromium
+         (tests/browser_serial_mock.py) :
+         L -> A -> L -> OFF ; 3 ouvertures à 921600 bauds 8N2 ;
+         lecture de trames DPX1 à CRC valide ; 30000 Hz en L et en A ;
+         aucune erreur JavaScript détectée.
+- PASS — Fichiers inchangés depuis V5 : facade-cb.png, facade.css,
+         facade-ui.js, style.css, audio-engine.js, signal-shaping.js,
+         diagnostics.js, diagnostics-ui.js (contrôle de somme SHA-256).
+
+DÉBIT THÉORIQUE POUR LE PRESET 20/8 :
+- 30000 octets PCM par seconde pour la voie Master.
+- 30000 octets PCM par seconde pour la voie Slave.
+- 60000 octets/s avant encapsulation DPX1 ; 68437,5 octets/s en DPX1.
+- 821250 bauds au pacing de 12 bits/octet, sur une liaison 921600 bauds.
+- Occupation estimée : 89,1 % ; marge estimée : 10,9 %.
+- 16 trames DPX1 en ring firmware, au lieu de 8 (plus de tampon lorsque
+  les deux canaux complets sont émis en mode L).
+
+NON VALIDÉ (NÉCESSITE LE MATÉRIEL) :
+- Flash/compilation du sketch avec le véritable SDK ESP8266 et le bon choix
+  de carte/bootloader.
+- Tests de stabilité sur ESP8266 à 160 MHz et adaptateur USB-UART 921600 8N2.
+- Mesures RF, IQ LATE, UART ERRORS, RX DROPS, suppression de pertes en direct,
+  comparaisons auditives, stabilité sur plusieurs minutes.
+
+Les 30000 Hz identiques ne garantissent pas à eux seuls une qualité sonore
+identique : les deux voix sont mélangées en passif ; les filtres Music/Raw
+restent à environ 5000 Hz ; le bruit radio et les pertes matérielles persistent.
