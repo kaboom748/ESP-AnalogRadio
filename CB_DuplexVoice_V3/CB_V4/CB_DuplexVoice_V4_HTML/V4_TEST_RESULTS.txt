@@ -1,0 +1,51 @@
+CB DUPLEX VOICE V4 — SOFTWARE TEST RESULTS
+==========================================
+This file is a record of model tests, NOT two-board RF confirmation.
+
+Identity check:
+  Arduino V4 .ino SHA-256 is identical to the V3 .ino. No RF register, APWR,
+  TDD scheduling, packet format, pulse-width PWM threshold or sync change.
+
+PCM8 link compander / expander:
+  Off = original PCM8 linear mapping; Medium = mu-law 63; Strong = mu-law 255.
+  All modes avoid the reserved -128 UART code and have symmetric encode/decode.
+  -42 dBFS at 1 kHz is representable with more quantization levels in Strong.
+
+Simplified pulse-width threshold model:
+  Physical TX sendSlot models a width=pcm*1280/381 and minimum 80 cycles.
+  At 1kHz / logical 30kHz, model amplitude errors (dB):
+    TX        Off         Strong
+    -12       -0.1        -0.1
+    -18       -0.8         0.0
+    -24       -3.8        +0.1
+    -30       -4.6         0.0
+    -36       not passed  +0.2
+    -42       not passed  +2.5
+  This is a model without actual RF/IQ hardware, not measured radio results.
+
+TDD filter:
+  Synthetic 20/8 signal at 1,500Hz was attenuated 68 dB by the filter,
+  while 1,100Hz was unchanged within test precision.
+  Applying this V4 notch alone to the user's REAL V3 captured WAV (12/4,
+  25,714 samples/s), spectral-line attenuation was:
+    2142.9 Hz  -64.3 dB
+    4285.7 Hz  -56.0 dB
+    6428.6 Hz  -60.8 dB
+    8571.4 Hz  -46.5 dB
+   10714.3 Hz  -47.7 dB
+  Total RMS changed only from 0.1533 to 0.1515: most broadband noise remains.
+  TDD notches intentionally attenuate genuine audio tones at these frequencies.
+
+Diagnostic UI:
+  21-stage full-bank loopback PASSED in all three companding modes.
+  Strong 1kHz / -12dBFS loopback ~-12.1dBFS.
+  Chromium mock-port session test PASSED: Listen -> Master -> Bench ->
+  Stop -> Listen -> Disconnect; on-air coding locks while the port is open;
+  local notch toggle is available during listening.
+  CSV and WAV exports PASSED.
+  No JavaScript page errors.
+
+Limitations:
+  No physical two-ESP8266 RF test, no calibrated SDR measurement,
+  no actual-Arduino-core build in this environment.
+  Live browsers require secure context for microphone and WebSerial.
