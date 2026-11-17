@@ -1,0 +1,15 @@
+Binaire compilé : CB_FM_STEREOv13_Arduino.ino.bin
+Adresse d'écriture : 0x00000000
+ESP8266EX, CPU 160 MHz, flash 4 MB, DIO, horloge flash 40 MHz.
+Arduino ESP8266 core 3.1.2 ; partition 4M1M.
+
+SHA-256 : 77bb485997705ed1edc9fa02c04ca940701dad63d09f2f8093b8c9d6a18bc1a3
+
+Le débit de téléchargement du firmware, par exemple 460800 baud, est
+indépendant du débit de fonctionnement du programme, fixé à 1500000 baud.
+Les deux ESP du banc ont déjà reçu ce binaire, avec vérification des données
+écrites par esptool. Aucun effacement complet de la flash n'a été effectué.
+
+Pour recompiler : ouvrir le sketch du dossier parent dans Arduino IDE,
+choisir LOLIN(WEMOS) D1 R2 & mini, CPU 160 MHz, flash 4 MB (FS 1 MB),
+mode DIO et 40 MHz. Ne pas compiler avec le CPU à 80 MHz.
