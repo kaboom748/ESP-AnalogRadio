@@ -1,6 +1,6 @@
 “No soldering, no extra components: all you need is an ESP8266 D1 Mini and its serial port to broadcast analog FM stereo.”
 
-CB-FMStereov1/CB_V13 ---> LATEST CERTIFIED
+CB-FMStereov1/CB_V13 ---> LATEST CERTIFIED (Very high quality FM Stereo :P:P:P:P)
 
 <img width="1657" height="754" alt="Capture d’écran 2026-11-08 170647" src="https://github.com/user-attachments/assets/5fb3ae29-c23d-423c-8428-9148698146bb" />
 <img width="1013" height="865" alt="Capture d’écran 2026-11-08 083312" src="https://github.com/user-attachments/assets/581b1049-cab8-4d06-9ce0-91fc687d9722" />
