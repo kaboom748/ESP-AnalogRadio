@@ -9,7 +9,9 @@ extern "C" {
 /* Continuous CB13 NCO backend. All full calibration occurs before READY. */
 bool c6_tx_radio_prepare(uint32_t carrier_hz,uint8_t apwr);
 bool IRAM_ATTR c6_tx_radio_key(void);
-/* Original ESP8266 NCO units, 78125 Hz each. K=4 is the RF carrier. */
+/* Native C6 fine steps are 39062.5 Hz. K=8 is LO + 312500 Hz. */
+#define C6_TX_NCO_STEP_HZ_X2 78125u
+#define C6_TX_NCO_CARRIER_CODE 8
 void IRAM_ATTR c6_tx_radio_write_k(unsigned k);
 void IRAM_ATTR c6_tx_radio_off(void);
 void c6_tx_radio_release(void);

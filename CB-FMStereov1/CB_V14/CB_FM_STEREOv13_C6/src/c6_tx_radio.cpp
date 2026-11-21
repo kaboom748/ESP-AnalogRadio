@@ -34,13 +34,14 @@ namespace {
 constexpr uint32_t Tone1=0x600a0420u,Tone2=0x600a0424u,Fraction=0x600a042cu;
 constexpr uint32_t Mux=0x600a0414u,ConstantI=0x600a0418u,ConstantQ=0x600a041cu;
 constexpr uint32_t Gate=1u<<18,FineMode=1u<<29,Fields=0x0fffffffu;
+constexpr unsigned ToneCodes=16;
 /* Exact C6 wifi_get_tx_tab() rodata, not the C5 PA/BB table. Power units
  * are quarter-dB; calibrated digital gain is fetched for the actual channel. */
 constexpr uint16_t NativeRf[]={63,63,47,39,31,23,14,13,12,7,5,3,2,1,0,0};
 constexpr uint16_t NativeBb[]={128,0,0,0,0,0,0,0,0,0,0,0,0,0,128,0};
 constexpr int16_t NativePower[]={34,26,20,15,9,0,-16,-22,-28,-35,-45,-59,-69,-83,-99,-107};
 constexpr int ToneMargin=12;
-static DRAM_ATTR uint32_t words[8],fractions[8];
+static DRAM_ATTR uint32_t words[ToneCodes],fractions[ToneCodes];
 static DRAM_ATTR uint16_t dco[4],rfGain,bbGain,ncoAttenuation;
 static uint32_t savedTone1,savedTone2,savedFraction,savedMux,savedI,savedQ,loHz;
 static bool owned,keyed;
@@ -96,11 +97,8 @@ extern "C" bool c6_tx_radio_prepare(uint32_t carrier_hz,uint8_t apwr) {
     const uint32_t common=(REG_READ(Tone1)&~(Fields|Gate))|FineMode|
         (uint32_t(uint8_t(0u-unsigned(ncoAttenuation)))<<10);
     const uint32_t fraction=REG_READ(Fraction)&~3u;
-    for(unsigned k=0;k<8u;++k) {
-        /* Fine-mode NCO resolution39.0625kHz; two codes match one original
-         * ESP8266 step78.125kHz. K=4 therefore remains312500Hz above LO. */
-        const uint32_t code=2u*k;
-        words[k]=common|Gate|(code>>2);fractions[k]=fraction|(code&3u);
+    for(unsigned k=0;k<ToneCodes;++k) {
+        words[k]=common|Gate|(k>>2);fractions[k]=fraction|(k&3u);
     }
     REG_WRITE(Tone1,common);REG_WRITE(Tone2,REG_READ(Tone2)&~Gate);
     fence();keyed=false;return true;
@@ -121,7 +119,7 @@ extern "C" bool IRAM_ATTR c6_tx_radio_key(void) {
 }
 
 extern "C" void IRAM_ATTR c6_tx_radio_write_k(unsigned k) {
-    if(!keyed || k>=8u)return;
+    if(!keyed || k>=ToneCodes)return;
     REG_WRITE(Fraction,fractions[k]);REG_WRITE(Tone1,words[k]);fence();
 }
 

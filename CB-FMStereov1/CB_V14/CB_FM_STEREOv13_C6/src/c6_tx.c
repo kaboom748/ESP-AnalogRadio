@@ -36,6 +36,7 @@ static volatile bool armed,running,end_seen;
 static bool initialized,protected_stream;
 static const char *last_fault;
 static int32_t phase_debt;
+static uint32_t pulse_random;
 static unsigned last_k;
 
 static inline __attribute__((always_inline)) uint32_t cycles(void){return esp_cpu_get_cycle_count();}
@@ -44,11 +45,12 @@ static inline __attribute__((always_inline)) uint32_t magnitude(int32_t x){retur
 
 bool c6_tx_init(void) {
     if(initialized)return true;
-    const int64_t denominator=127LL*78125LL;
+    const int64_t denominator=127LL*C6_TX_NCO_STEP_HZ_X2;
     for(unsigned b=0;b<256u;++b) {
         const int32_t sample=(int8_t)b;
-        const int64_t scaled=(int64_t)sample*50000LL*65536LL;
-        const int32_t q=4*65536+(int32_t)((scaled+(scaled>=0?denominator/2:-denominator/2))/denominator);
+        const int64_t scaled=(int64_t)sample*2LL*50000LL*65536LL;
+        const int32_t q=C6_TX_NCO_CARRIER_CODE*65536+
+            (int32_t)((scaled+(scaled>=0?denominator/2:-denominator/2))/denominator);
         const int32_t nearest=(q+32768)>>16;
         levels[b]=(mpx_level_t){(uint16_t)nearest,(int16_t)(q-nearest*65536)};
     }
@@ -59,7 +61,8 @@ bool c6_tx_start(uint32_t carrier_hz,uint8_t apwr) {
     if(armed || running || apwr>191u || carrier_hz<2401000000u || carrier_hz>2482500000u)return false;
     if(!c6_tx_init() || !c6_tx_radio_prepare(carrier_hz,apwr))return false;
     memset(&counters,0,sizeof(counters));counters.min_queue=C6_TX_RING_SAMPLES;
-    write_head=read_tail=0;phase_debt=0;last_k=8u;
+    write_head=read_tail=0;phase_debt=0;last_k=UINT32_MAX;
+    pulse_random=cycles()|1u;
     end_seen=false;protected_stream=false;last_fault=NULL;armed=true;return true;
 }
 
@@ -99,6 +102,15 @@ static inline __attribute__((always_inline)) void wait_until(uint32_t deadline,v
     while(armed && (int32_t)(cycles()-deadline)<0)pump(user);
 }
 
+static inline __attribute__((always_inline)) bool emit_minimum_pulse(uint32_t width) {
+    uint32_t random=pulse_random;
+    random^=random<<13;
+    random^=random>>17;
+    random^=random<<5;
+    pulse_random=random;
+    return (random&0xffffu)*MIN_PULSE_CYCLES<(width<<16);
+}
+
 static void IRAM_ATTR emit_mpx(uint8_t sample,uint32_t deadline,uint32_t period,void (*pump)(void*),void *user) {
     const mpx_level_t level=levels[sample];
     if(last_k!=level.nearest_k){c6_tx_radio_write_k(level.nearest_k);last_k=level.nearest_k;}
@@ -106,6 +118,10 @@ static void IRAM_ATTR emit_mpx(uint8_t sample,uint32_t deadline,uint32_t period,
     int32_t area=((target+(target>=0?32768:-32768))/65536)+phase_debt;
     const bool up=area>=0;
     int32_t width=(int32_t)magnitude(area);
+    // Randomize sub-minimum corrections to break patterns coherent with the
+    // stereo pilot. Subtract only the correction actually emitted below.
+    if(width>0 && width<MIN_PULSE_CYCLES && emit_minimum_pulse((uint32_t)width))
+        width=MIN_PULSE_CYCLES;
     if(width>=MIN_PULSE_CYCLES) {
         if(width>MAX_PULSE_CYCLES)width=MAX_PULSE_CYCLES;
         const uint32_t start=deadline-(period+(uint32_t)width)/2u;
