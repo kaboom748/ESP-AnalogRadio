@@ -21,6 +21,8 @@ struct MpxLevel {
 static MpxLevel levels[256];
 static uint32_t rfWord=0,lastTone=0;
 static int32_t phaseDebt=0;
+static int32_t previousPhaseDebt=0;
+static uint32_t pulseRandom=1u;
 static constexpr int32_t MIN_PULSE_CYCLES=64;
 static constexpr int32_t TONE_WRITE_CYCLES=32;
 static constexpr int32_t ISR_EXIT_CYCLES=224;
@@ -38,6 +40,15 @@ static void prepareMpxLevels(){
   }
 }
 
+static inline __attribute__((always_inline)) bool emitMinimumPulse(uint32_t width){
+  uint32_t random=pulseRandom;
+  random^=random<<13;
+  random^=random>>17;
+  random^=random<<5;
+  pulseRandom=random;
+  return (random&0xffffu)*uint32_t(MIN_PULSE_CYCLES)<(width<<16);
+}
+
 static void IRAM_ATTR emitMpx(uint8_t sample,uint32_t deadline){
   const MpxLevel level=levels[sample];
   const uint32_t baseline=rfWord|level.nearestK;
@@ -46,11 +57,16 @@ static void IRAM_ATTR emitMpx(uint8_t sample,uint32_t deadline){
     lastTone=baseline;
   }
 
-  // Une impulsion centree vers le pas voisin interpole le registre RF de
-  // pas 78 125 Hz. Reporter l'erreur d'aire mesuree au tick suivant.
-  int32_t area=int32_t(level.pulseCycles)+phaseDebt;
+  // Reporter l'erreur mesuree et la moitie de sa variation pour attenuer
+  // le bruit basse frequence du quantificateur d'impulsions.
+  const int32_t correction=phaseDebt+(phaseDebt-previousPhaseDebt)/2;
+  int32_t area=int32_t(level.pulseCycles)+correction;
   const bool up=area>=0;
   int32_t width=up?area:-area;
+  // Tirer seulement les impulsions sous le minimum pour casser les motifs
+  // coherents avec le pilote. La duree effectivement emise est deduite.
+  if(width>0 && width<MIN_PULSE_CYCLES && emitMinimumPulse(uint32_t(width)))
+    width=MIN_PULSE_CYCLES;
   if(width>=MIN_PULSE_CYCLES){
     if(width>MAX_PULSE_CYCLES)width=MAX_PULSE_CYCLES;
     const uint32_t start=deadline-(SAMPLE_CYCLES+uint32_t(width))/2u;
@@ -68,6 +84,7 @@ static void IRAM_ATTR emitMpx(uint8_t sample,uint32_t deadline){
       area+=up?-actual:actual;
     }
   }
+  previousPhaseDebt=phaseDebt;
   phaseDebt=constrain(area,-int32_t(SAMPLE_CYCLES),int32_t(SAMPLE_CYCLES));
 }
 
@@ -111,7 +128,8 @@ static void startFM(){
   gateOff();toneProgramOff();
   lastTone=rd32(TONE1);
   rfWord=(lastTone&~(K_MASK|SCALE_MASK|GATE_MASK))|GATE_MASK;
-  phaseDebt=0;
+  phaseDebt=previousPhaseDebt=0;
+  pulseRandom=cyc()|1u;
   savedMacMask=rd32(MAC_INT_ENA);wr32(MAC_INT_ENA,0);memw();macLoan=true;
   timer1_disable();timer1_detachInterrupt();timer1_isr_init();timer1_attachInterrupt(tick);
   nextDeadline=cyc()+SAMPLE_CYCLES;cycleFraction=0;
