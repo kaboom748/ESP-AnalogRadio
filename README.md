@@ -1,7 +1,5 @@
 <mark>ESP-AnalogRadio/CB-FMStereov1/CB_V14 - ESP8266 ESP32-C5 ESP32-C6 ESP32 SUPPORTED</mark> 
 
-ESP-AnalogRadio/CB_DuplexVoice_V3/CB_V6 - ESP32-C5 SUPPORTED
-
 “No soldering, no extra components: all you need is an ESP8266 D1 Mini and its serial port to broadcast analog FM stereo.”
 
 CB-FMStereov1/CB_V13 ---> LATEST CERTIFIED (Very high quality FM Stereo :P:P:P:P - do not use APWR to low)
