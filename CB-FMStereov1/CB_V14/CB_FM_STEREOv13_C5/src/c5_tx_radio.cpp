@@ -35,11 +35,12 @@ constexpr uint32_t Tone1=0x600a041cu,Tone2=0x600a0420u,Fraction=0x600a0428u;
 constexpr uint32_t Mux=0x600a040cu,ConstantI=0x600a0410u,ConstantQ=0x600a0414u;
 constexpr uint32_t DacScale=0x600a0c04u,Txdc=0x600a0c08u;
 constexpr uint32_t Gate=1u<<18,FineMode=1u<<29,Fields=0x0003ffffu;
+constexpr unsigned ToneCodes=16;
 constexpr uint16_t NativeRf[]={63,63,55,47,39,31,31,23,15,13,7,5,3,2,1,1,1,1};
 constexpr uint16_t NativeBb[]={3,3,3,3,3,3,1,1,1,1,1,1,1,1,1,0,0,0};
 constexpr int16_t NativePower[]={30,30,27,23,18,12,0,-9,-21,-29,-44,-53,-67,-77,-91,-103,-103,-103};
 constexpr int ToneMargin=32;
-static DRAM_ATTR uint32_t words[8],fractions[8];
+static DRAM_ATTR uint32_t words[ToneCodes],fractions[ToneCodes];
 static DRAM_ATTR uint16_t dco[4],rfGain,bbGain,ncoAttenuation;
 static uint32_t savedTone1,savedTone2,savedFraction,savedMux,savedI,savedQ,savedScale,savedTxdc;
 static uint64_t loHz;
@@ -62,7 +63,7 @@ extern "C" bool c5_tx_radio_prepare(uint64_t carrier_hz,uint8_t apwr) {
     band5=c5_frequency_is_5g(carrier_hz);
     chosenTableIndex=UINT32_MAX;
     useDco=false;
-    /* Keep the V13 NCO carrier K=4 = LO+312500Hz. All arithmetic
+    /* The native fine-step carrier K=8 is still LO+312500Hz. All arithmetic
      * stays 64-bit until the private PHY MHz/kHz parameters. */
     const uint64_t requestedLo=carrier_hz-UINT64_C(312500);
     const uint64_t khz=(requestedLo+UINT64_C(500))/UINT64_C(1000);
@@ -145,9 +146,8 @@ extern "C" bool c5_tx_radio_prepare(uint64_t carrier_hz,uint8_t apwr) {
     const uint32_t common=(REG_READ(Tone1)&~(Fields|Gate))|FineMode|
         ((uint32_t)(uint8_t)(0u-(unsigned)ncoAttenuation)<<10);
     const uint32_t fraction=REG_READ(Fraction)&~3u;
-    for(unsigned k=0;k<8u;++k) {
-        const uint32_t code=2u*k;
-        words[k]=common|Gate|(code>>2);fractions[k]=fraction|(code&3u);
+    for(unsigned k=0;k<ToneCodes;++k) {
+        words[k]=common|Gate|(k>>2);fractions[k]=fraction|(k&3u);
     }
     REG_WRITE(Tone1,common);REG_WRITE(Tone2,REG_READ(Tone2)&~Gate);
     fence();keyed=false;prepareError="OK";return true;
@@ -169,7 +169,7 @@ extern "C" bool IRAM_ATTR c5_tx_radio_key(void) {
 }
 
 extern "C" void IRAM_ATTR c5_tx_radio_write_k(unsigned k) {
-    if(!keyed || k>=8u)return;
+    if(!keyed || k>=ToneCodes)return;
     REG_WRITE(Fraction,fractions[k]);REG_WRITE(Tone1,words[k]);fence();
 }
 
