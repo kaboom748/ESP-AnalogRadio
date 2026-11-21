@@ -30,12 +30,13 @@ namespace {
  * 0x3ff460b8/0x3ff460bc/0x3ff450a8. Use the ROM's exact address plan. */
 constexpr uint32_t Tone1=0x600060b8u,Tone2=0x600060bcu,Fraction=0x600050a8u;
 constexpr uint32_t Gate=1u<<18,FineMode=1u<<29,Fields=0x0fffffffu;
+constexpr unsigned ToneCodes=16;
 /* Exact classic correct_rf_ana_gain_new() RF stages. The seventeenth
  * rodata entry is a lower sentinel, not an additional RF stage. Units qdB. */
 constexpr uint16_t NativeRf[]={0x7f,0x6f,0x5f,0x7a,0x5a,0x69,0x75,0x55,0x74,0x54,0x44,0x60,0x40,0x20,0x10,0};
 constexpr int16_t NativePower[]={10,5,0,-8,-18,-25,-34,-44,-55,-65,-71,-84,-96,-113,-127,-151};
 constexpr int ToneMargin=12;
-static DRAM_ATTR uint32_t words[8],fractions[8],mutedWord;
+static DRAM_ATTR uint32_t words[ToneCodes],fractions[ToneCodes],mutedWord;
 static DRAM_ATTR uint16_t dco[4],rfGain,bbGain,ncoAttenuation;
 static uint32_t savedTone1,savedTone2,savedFraction,loHz;
 static DRAM_ATTR bool owned,keyed;
@@ -80,11 +81,8 @@ extern "C" bool e32_tx_radio_prepare(uint32_t carrier_hz,uint8_t apwr) {
     mutedWord=(DPORT_REG_READ(Tone1)&~(Fields|Gate))|FineMode|
         (uint32_t(uint8_t(0u-unsigned(ncoAttenuation)))<<10);
     const uint32_t fraction=DPORT_REG_READ(Fraction)&~3u;
-    for(unsigned k=0;k<8u;++k) {
-        /* Fine NCO unit39.0625kHz: two codes equal the original ESP8266's
-         * 78.125kHz unit. K4 therefore places RF312500Hz above the LO. */
-        const uint32_t code=2u*k;
-        words[k]=mutedWord|Gate|(code>>2);fractions[k]=fraction|(code&3u);
+    for(unsigned k=0;k<ToneCodes;++k) {
+        words[k]=mutedWord|Gate|(k>>2);fractions[k]=fraction|(k&3u);
     }
     REG_WRITE(Tone1,mutedWord);REG_WRITE(Tone2,DPORT_REG_READ(Tone2)&~Gate);
     fence();keyed=false;return true;
@@ -104,7 +102,7 @@ extern "C" bool e32_tx_radio_key(void) {
 }
 
 extern "C" void e32_tx_radio_write_k(unsigned k) {
-    if(!keyed || k>=8u)return;
+    if(!keyed || k>=ToneCodes)return;
     REG_WRITE(Fraction,fractions[k]);REG_WRITE(Tone1,words[k]);fence();
 }
 

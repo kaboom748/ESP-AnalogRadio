@@ -10,7 +10,9 @@ extern "C" {
 bool e32_tx_radio_prepare(uint32_t carrier_hz,uint8_t apwr);
 /* Vendor calls: key before entering the parked-core streaming runtime. */
 bool e32_tx_radio_key(void);
-/* Original ESP8266 NCO units, 78125 Hz each. K=4 is the RF carrier. */
+/* Native ESP32 fine steps are 39062.5 Hz. K=8 is LO + 312500 Hz. */
+#define E32_TX_NCO_STEP_HZ_X2 78125u
+#define E32_TX_NCO_CARRIER_CODE 8
 void IRAM_ATTR e32_tx_radio_write_k(unsigned k);
 void IRAM_ATTR e32_tx_radio_gate_off(void);
 /* Vendor cleanup: call after leaving the streaming runtime. */
