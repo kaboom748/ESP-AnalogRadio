@@ -217,7 +217,7 @@ void IRAM_ATTR renderPcmTx(uint32_t budget=UINT32_MAX) {
     const bool completingStage=pcmSampleStaged;
     const int16_t mpx=completingStage?c6_pcm_tx_dsp::finishSample(envelope):c6_pcm_tx_dsp::renderSample(envelope);
     pcmSampleStaged=false;
-    tx.accepted+=c6_tx_enqueue_pcm12(mpx);
+    tx.accepted+=c6_tx_enqueue_mpx_q4(mpx);
     if(!c6_pcm_tx_dsp::pairPending() && ++pcmIngress.pair==pcm12::TxPairs) {
         pcmIngress.pair=0;
         ++pcmIngress.read;

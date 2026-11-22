@@ -12,6 +12,10 @@
 #include "esp_phy_cert_test.h"
 #include "soc/soc.h"
 
+#ifndef C6_TX_FAST_SAME_COARSE
+#define C6_TX_FAST_SAME_COARSE 1
+#endif
+
 #if !CONFIG_IDF_TARGET_ESP32C6 || ESP_IDF_VERSION != ESP_IDF_VERSION_VAL(5,5,5)
 #error "Use ESP32C6 Dev Module with Arduino-ESP32 3.3.12"
 #endif
@@ -35,6 +39,7 @@ constexpr uint32_t Tone1=0x600a0420u,Tone2=0x600a0424u,Fraction=0x600a042cu;
 constexpr uint32_t Mux=0x600a0414u,ConstantI=0x600a0418u,ConstantQ=0x600a041cu;
 constexpr uint32_t Gate=1u<<18,FineMode=1u<<29,Fields=0x0fffffffu;
 constexpr unsigned ToneCodes=16;
+constexpr uint32_t LoStepHz=1000u;
 /* Exact C6 wifi_get_tx_tab() rodata, not the C5 PA/BB table. Power units
  * are quarter-dB; calibrated digital gain is fetched for the actual channel. */
 constexpr uint16_t NativeRf[]={63,63,47,39,31,23,14,13,12,7,5,3,2,1,0,0};
@@ -45,18 +50,23 @@ static DRAM_ATTR uint32_t words[ToneCodes],fractions[ToneCodes];
 static DRAM_ATTR uint16_t dco[4],rfGain,bbGain,ncoAttenuation;
 static uint32_t savedTone1,savedTone2,savedFraction,savedMux,savedI,savedQ,loHz;
 static bool owned,keyed;
+#if C6_TX_FAST_SAME_COARSE
+constexpr unsigned FirstCoarseWrite=ToneCodes/4u,AlwaysWriteCoarse=FirstCoarseWrite+1u;
+static DRAM_ATTR unsigned previousCoarse;
+#endif
 inline __attribute__((always_inline)) void fence(){asm volatile("fence iorw,iorw":::"memory");}
 }
 
-extern "C" bool c6_tx_radio_prepare(uint32_t carrier_hz,uint8_t apwr) {
+extern "C" bool c6_tx_radio_prepare(uint32_t carrier_hz,uint8_t apwr,unsigned center_k) {
     if(carrier_hz<2401000000u || carrier_hz>2482500000u || apwr>191u)return false;
+    if(center_k!=C6_TX_NCO_CARRIER_CODE && center_k!=C6_TX_NCO_IN_GROUP_CENTER_CODE)return false;
     c6_tx_radio_release();
     if(c6_radio_init()!=ESP_OK)return false;
-    /* Match the original carrier K=4 and LO offset312500Hz. Unlike RX,
-     * TX's LO may be312.5kHz below the nominal lower radio-band bound. */
-    const uint32_t requestedLo=carrier_hz-312500u;
-    const uint32_t khz=(requestedLo+500u)/1000u;
-    loHz=khz*1000u;
+    /* Round the offset LO to phy_set_freq's nearest 1 kHz. Use doubled
+     * units so K9's half-hertz offset does not get truncated first. */
+    const uint64_t loHzTimesTwo=2ull*carrier_hz-uint64_t(center_k)*C6_TX_NCO_STEP_HZ_X2;
+    const uint32_t khz=uint32_t((loHzTimesTwo+LoStepHz)/(2u*LoStepHz));
+    loHz=khz*LoStepHz;
     savedTone1=REG_READ(Tone1);savedTone2=REG_READ(Tone2);savedFraction=REG_READ(Fraction);
     savedMux=REG_READ(Mux);savedI=REG_READ(ConstantI);savedQ=REG_READ(ConstantQ);
     owned=true;
@@ -100,6 +110,9 @@ extern "C" bool c6_tx_radio_prepare(uint32_t carrier_hz,uint8_t apwr) {
     for(unsigned k=0;k<ToneCodes;++k) {
         words[k]=common|Gate|(k>>2);fractions[k]=fraction|(k&3u);
     }
+#if C6_TX_FAST_SAME_COARSE
+    previousCoarse=center_k==C6_TX_NCO_IN_GROUP_CENTER_CODE?FirstCoarseWrite:AlwaysWriteCoarse;
+#endif
     REG_WRITE(Tone1,common);REG_WRITE(Tone2,REG_READ(Tone2)&~Gate);
     fence();keyed=false;return true;
 }
@@ -115,12 +128,29 @@ extern "C" bool IRAM_ATTR c6_tx_radio_key(void) {
     REG_WRITE(ConstantI,0u);REG_WRITE(ConstantQ,0u);
     /* Native start_tx_tone clears these two bypass bits; merely gating the
      * NCO did not restore modulation after stop/work mode. */
+#if C6_TX_FAST_SAME_COARSE
+    // The first write after keying must set the coarse word and gate.
+    if(previousCoarse!=AlwaysWriteCoarse)previousCoarse=FirstCoarseWrite;
+#endif
     REG_WRITE(Mux,REG_READ(Mux)&~3u);fence();keyed=true;return true;
 }
 
 extern "C" void IRAM_ATTR c6_tx_radio_write_k(unsigned k) {
     if(!keyed || k>=ToneCodes)return;
-    REG_WRITE(Fraction,fractions[k]);REG_WRITE(Tone1,words[k]);fence();
+    REG_WRITE(Fraction,fractions[k]);
+#if C6_TX_FAST_SAME_COARSE
+    /* Experimental. First key, coarse changes and the legacy K8 path
+     * always write both registers in their original order. */
+    const unsigned coarse=k>>2;
+    const unsigned last=previousCoarse;
+    if(coarse!=last) {
+        REG_WRITE(Tone1,words[k]);
+        if(last!=AlwaysWriteCoarse)previousCoarse=coarse;
+    }
+#else
+    REG_WRITE(Tone1,words[k]);
+#endif
+    fence();
 }
 
 extern "C" void IRAM_ATTR c6_tx_radio_off(void) {

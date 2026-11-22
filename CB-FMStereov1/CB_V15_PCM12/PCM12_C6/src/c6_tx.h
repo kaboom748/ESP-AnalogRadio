@@ -12,6 +12,7 @@ extern "C" {
 #define C6_TX_IQ_HZ 120000u /* One MPX interval; modulation is native NCO. */
 #define C6_TX_RING_SAMPLES 16384u
 #define C6_TX_START_LEVEL 4096u
+#define C6_TX_MPX_Q4_FULL_SCALE (2047 * 16)
 typedef struct {
     uint32_t samples,underruns,zero_samples,timer_skips,ring_drops;
     uint32_t min_queue,max_queue,max_late_cycles,late_slots;
@@ -29,7 +30,8 @@ bool c6_tx_is_active(void);
 size_t c6_tx_free_samples(void);
 size_t c6_tx_queued_samples(void);
 size_t c6_tx_feed(const uint8_t *samples,size_t count);
-bool c6_tx_enqueue_pcm12(int16_t sample);
+/* Enqueue one 120 kHz multiplex sample with four fractional PCM bits. */
+bool c6_tx_enqueue_mpx_q4(int16_t sample);
 uint32_t c6_tx_pcm_played(void);
 /* Budget is measured to the next RF transition with an edge reserve. */
 uint32_t c6_tx_pcm_pump_budget(void);

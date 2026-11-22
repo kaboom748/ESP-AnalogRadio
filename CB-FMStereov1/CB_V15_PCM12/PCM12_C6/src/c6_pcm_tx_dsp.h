@@ -2,24 +2,26 @@
 #pragma once
 #include <stdint.h>
 #include "esp_attr.h"
+#include "c6_tx.h"
 
 namespace c6_pcm_tx_dsp {
 
 constexpr unsigned RdsSideSamples = 30;
-constexpr int32_t FullScale = 2047;
 
-// The V5 36 -> 120 kHz Q14 polyphase interpolator. Phase zero is a delay.
-static const DRAM_ATTR int16_t Fir[10][10] = {
-    {0, 0, 0, 0, 0, 16384, 0, 0, 0, 0},
-    {68, -169, 350, -698, 1706, 15995, -1368, 605, -305, 144},
-    {143, -348, 712, -1429, 3683, 15189, -2356, 1073, -540, 252},
-    {219, -518, 1049, -2122, 5838, 13902, -2955, 1378, -693, 318},
-    {284, -656, 1320, -2697, 8060, 12214, -3181, 1512, -759, 343},
-    {329, -742, 1485, -3075, 10227, 10227, -3075, 1485, -742, 329},
-    {343, -759, 1512, -3181, 12214, 8060, -2697, 1320, -656, 284},
-    {318, -693, 1378, -2955, 13902, 5838, -2122, 1049, -518, 219},
-    {252, -540, 1073, -2356, 15189, 3683, -1429, 712, -348, 143},
-    {144, -305, 605, -1368, 15995, 1706, -698, 350, -169, 68},
+// 36 -> 120 kHz Q14 polyphase FIR with a 15 kHz passband and 21 kHz
+// stopband edge. Each phase has unity DC gain. Phase zero is an exact
+// seven-sample delay, so it skips all the multiplies.
+static const DRAM_ATTR int16_t Fir[10][14] = {
+    {0, 0, 0, 0, 0, 0, 0, 16384, 0, 0, 0, 0, 0, 0},
+    {325, -199, 124, -306, 465, -773, 1763, 16123, -1418, 702, -406, 209, -192, -33},
+    {242, -268, 328, -606, 887, -1587, 3752, 15305, -2479, 1219, -715, 424, -266, 148},
+    {232, -377, 502, -804, 1308, -2301, 5959, 14031, -3096, 1583, -967, 551, -436, 199},
+    {256, -449, 573, -1004, 1609, -2918, 8202, 12334, -3365, 1794, -1086, 675, -466, 229},
+    {257, -453, 654, -1113, 1785, -3305, 10367, 10367, -3305, 1785, -1113, 654, -453, 257},
+    {229, -466, 675, -1086, 1794, -3365, 12334, 8202, -2918, 1609, -1004, 573, -449, 256},
+    {199, -436, 551, -967, 1583, -3096, 14031, 5959, -2301, 1308, -804, 502, -377, 232},
+    {148, -266, 424, -715, 1219, -2479, 15305, 3752, -1587, 887, -606, 328, -268, 242},
+    {-33, -192, 209, -406, 702, -1418, 16123, 1763, -773, 465, -306, 124, -199, 325},
 };
 
 // The pilot and the two subcarriers share a phase origin and sample clock.
@@ -103,10 +105,10 @@ static inline __attribute__((always_inline)) int16_t mix(int32_t leftQ4, int32_t
     const int32_t rds = (rdsInterpolated * RdsCarrier[mpxPhase] + 128) >> 8;
     rdsInterpolated += rdsStep;
     if (++rdsPhase == 12) rdsPhase = 0;
-    const int32_t mpx = (programme + Pilot[mpxPhase] + rds + 8) >> 4;
+    const int32_t mpx = programme + Pilot[mpxPhase] + rds;
     if (++mpxPhase == 120) mpxPhase = 0;
-    if (mpx > FullScale) return FullScale;
-    if (mpx < -FullScale) return -FullScale;
+    if (mpx > C6_TX_MPX_Q4_FULL_SCALE) return C6_TX_MPX_Q4_FULL_SCALE;
+    if (mpx < -C6_TX_MPX_Q4_FULL_SCALE) return -C6_TX_MPX_Q4_FULL_SCALE;
     return int16_t(mpx);
 }
 
@@ -117,7 +119,7 @@ static inline __attribute__((always_inline)) StereoQ4 interpolateSample() {
     const uint8_t phase = interpolationPhase;
     const Stereo* current = &history[historyAt + 16];
     if (phase == 0) {
-        const Stereo delayed = current[-5];
+        const Stereo delayed = current[-7];
         return {delayed.left * 16, delayed.right * 16};
     }
     const int16_t* coefficients = Fir[phase];
@@ -143,6 +145,10 @@ static inline __attribute__((always_inline)) StereoQ4 interpolateSample() {
         C6_PCM_TAP(14, -28, -26)
         C6_PCM_TAP(16, -32, -30)
         C6_PCM_TAP(18, -36, -34)
+        C6_PCM_TAP(20, -40, -38)
+        C6_PCM_TAP(22, -44, -42)
+        C6_PCM_TAP(24, -48, -46)
+        C6_PCM_TAP(26, -52, -50)
         : [left] "+&r" (left), [right] "+&r" (right)
         : [coefficients] "r" (coefficients), [samples] "r" (current)
         : "t0", "t1", "t2", "memory"
