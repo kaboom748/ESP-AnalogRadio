@@ -12,6 +12,7 @@ extern "C" {
 #define C5_TX_IQ_HZ 120000u /* One MPX interval; modulation is native NCO. */
 #define C5_TX_RING_SAMPLES 16384u
 #define C5_TX_START_LEVEL 4096u
+#define C5_TX_MPX_Q4_FULL_SCALE (2047 * 16) /* Nominal +/-50 kHz. */
 typedef struct {
     uint32_t samples,underruns,zero_samples,timer_skips,ring_drops;
     uint32_t min_queue,max_queue,max_late_cycles,late_slots;
@@ -29,7 +30,8 @@ bool c5_tx_is_active(void);
 size_t c5_tx_free_samples(void);
 size_t c5_tx_queued_samples(void);
 size_t c5_tx_feed(const uint8_t *samples,size_t count);
-size_t c5_tx_feed_pcm12(const int16_t *samples,size_t count);
+/* The on-device mixer retains four fractional bits beyond PCM12 units. */
+bool c5_tx_enqueue_mpx_q4(int16_t sample);
 uint32_t c5_tx_pcm_played(void);
 /* Before TX starts this is unbounded. In pump(), it ends at the next RF edge. */
 uint32_t c5_tx_pcm_pump_budget(void);

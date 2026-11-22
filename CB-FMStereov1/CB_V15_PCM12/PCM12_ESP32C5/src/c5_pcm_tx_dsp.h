@@ -6,7 +6,7 @@
 namespace c5_pcm_tx_dsp {
 
 constexpr unsigned RdsSideSamples = 30;
-constexpr int32_t FullScale = 2047;
+constexpr int32_t MpxQ4FullScale = 2047 * 16;
 
 // The V5 36 -> 120 kHz Q14 polyphase interpolator. Phase zero is a delay.
 static const DRAM_ATTR int16_t Fir[10][10] = {
@@ -103,15 +103,17 @@ static inline __attribute__((always_inline)) int16_t mix(int32_t leftQ4, int32_t
     const int32_t rds = (rdsInterpolated * RdsCarrier[mpxPhase] + 128) >> 8;
     rdsInterpolated += rdsStep;
     if (++rdsPhase == 12) rdsPhase = 0;
-    const int32_t mpx = (programme + Pilot[mpxPhase] + rds + 8) >> 4;
+    // Keep the fractional results of interpolation and multiplexing through
+    // the handoff to the RF modulator.
+    const int32_t mpx = programme + Pilot[mpxPhase] + rds;
     if (++mpxPhase == 120) mpxPhase = 0;
-    if (mpx > FullScale) return FullScale;
-    if (mpx < -FullScale) return -FullScale;
+    if (mpx > MpxQ4FullScale) return MpxQ4FullScale;
+    if (mpx < -MpxQ4FullScale) return -MpxQ4FullScale;
     return int16_t(mpx);
 }
 
 // The envelope remains valid until the current 108-pair packet is consumed.
-static int16_t IRAM_ATTR __attribute__((optimize("O2"), unused)) renderSample(const uint8_t* envelope) {
+static int16_t IRAM_ATTR __attribute__((optimize("O2"), unused)) renderSampleQ4(const uint8_t* envelope) {
     const uint8_t phase = interpolationPhase;
     interpolationPhase += 3;
     const Stereo* current = &history[historyAt + 16];
@@ -129,13 +131,6 @@ static int16_t IRAM_ATTR __attribute__((optimize("O2"), unused)) renderSample(co
         right += pair.right * coefficient;
     }
     return mix(left >> 10, right >> 10, envelope);
-}
-
-static inline unsigned renderPair(const uint8_t* stereo, const uint8_t* envelope, int16_t output[4]) {
-    loadPair(stereo);
-    unsigned count = 0;
-    do { output[count++] = renderSample(envelope); } while (pairPending());
-    return count;
 }
 
 }  // namespace c5_pcm_tx_dsp
