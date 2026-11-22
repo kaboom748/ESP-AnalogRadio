@@ -22,23 +22,34 @@
 #define REARM_GUARD_CYCLES 336
 #define MAX_CATCHUP_SAMPLES 8u
 #define MIN_PULSE_CYCLES 96
+#ifndef E32_TX_MPX_MIN_CYCLES
+#define E32_TX_MPX_MIN_CYCLES 96
+#endif
 #define TONE_WRITE_CYCLES 48
 #define EXIT_CYCLES 336
 #define MAX_PULSE_CYCLES 1020
-#define PCM12_AREA_BITS 5u
-#define PCM12_AREA_SCALE (1u << PCM12_AREA_BITS)
-#define PCM12_SLOPE_BITS 14u
-#define PCM12_SLOPE_ROUND (1u << (PCM12_SLOPE_BITS - 1u))
-#define PCM12_FULL_SCALE 2047
+#define MPX_AREA_BITS 9u
+#define MPX_AREA_SCALE (1u << MPX_AREA_BITS)
+#define MPX_SLOPE_BITS 10u
+#define MPX_SLOPE_ROUND (1 << (MPX_SLOPE_BITS - 1u))
+#define MPX_AREA_DENOMINATOR ((int64_t)E32_TX_NCO_STEP_HZ_X2 * E32_TX_MPX_Q4_FULL_SCALE)
+#define MPX_AREA_SLOPE ((SAMPLE_CYCLES * MPX_AREA_SCALE * 100000LL * (1LL << MPX_SLOPE_BITS) + \
+                         MPX_AREA_DENOMINATOR / 2) / MPX_AREA_DENOMINATOR)
 
 _Static_assert(CPU_HZ/E32_TX_PCM_HZ==2000 && CPU_HZ%E32_TX_PCM_HZ==0,"Exact integer MPX clock required");
 _Static_assert((E32_TX_RING_SAMPLES&RING_MASK)==0,"Power-of-two PCM ring");
+_Static_assert(MPX_AREA_SLOPE * E32_TX_MPX_Q4_FULL_SCALE + MPX_SLOPE_ROUND <= INT32_MAX,
+               "MPX-to-area product must fit the signed 32-bit multiply");
+_Static_assert((uint64_t)MIN_PULSE_CYCLES << (MPX_AREA_BITS + 16u) <= UINT32_MAX,
+               "Pulse probability must fit an unsigned 32-bit multiply");
+_Static_assert(E32_TX_MPX_MIN_CYCLES > TONE_WRITE_CYCLES && E32_TX_MPX_MIN_CYCLES <= MIN_PULSE_CYCLES,
+               "Minimum MPX pulse must allow the RF write and fit the probability bound");
 
 typedef struct {uint16_t nearest_k;int16_t pulse_q16;} mpx_level_t;
 static DRAM_ATTR mpx_level_t levels[256];
 static DRAM_ATTR union {
     uint8_t legacy[E32_TX_RING_SAMPLES];
-    int16_t pcm12[E32_TX_RING_SAMPLES];
+    int16_t mpx_q4[E32_TX_RING_SAMPLES];
 } pcm_ring;
 static DRAM_ATTR e32_tx_stats_t counters;
 static DRAM_ATTR volatile uint32_t write_head,read_tail,armed,end_seen;
@@ -108,28 +119,18 @@ size_t IRAM_ATTR e32_tx_feed(const uint8_t *samples,size_t count) {
     if(accepted<count)counters.ring_drops+=(uint32_t)(count-accepted);
     (void)e32_tx_commit(accepted);return accepted;
 }
-static inline __attribute__((always_inline)) int16_t clip_pcm12(int16_t value) {
-    if(value>PCM12_FULL_SCALE)return PCM12_FULL_SCALE;
-    if(value<-PCM12_FULL_SCALE)return -PCM12_FULL_SCALE;
-    return value;
-}
-
-size_t IRAM_ATTR e32_tx_feed_pcm12(const int16_t *samples,size_t count) {
-    if(!pcm12_mode || !samples || !load(&armed) || load(&end_seen))return 0;
-    const size_t available=e32_tx_free_samples(),accepted=count<available?count:available;
-    const uint32_t head=load(&write_head);
-    for(size_t n=0;n<accepted;++n)pcm_ring.pcm12[(head+n)&RING_MASK]=clip_pcm12(samples[n]);
-    if(accepted<count)counters.ring_drops+=(uint32_t)(count-accepted);
-    (void)e32_tx_commit(accepted);return accepted;
-}
-bool IRAM_ATTR e32_tx_enqueue_pcm12(int16_t sample) {
-    if(!pcm12_mode || !load(&armed) || load(&end_seen))return false;
-    const uint32_t position=load(&write_head);
-    const uint32_t queued=position-load(&read_tail);
-    if(queued>=E32_TX_RING_SAMPLES) {++counters.ring_drops;return false;}
-    pcm_ring.pcm12[position&RING_MASK]=clip_pcm12(sample);
-    store(&write_head,position+1);
-    if(queued+1>counters.max_queue)counters.max_queue=queued+1;
+bool IRAM_ATTR e32_tx_enqueue_mpx_q4(int16_t sample) {
+    if (!pcm12_mode || !load(&armed) || load(&end_seen)) return false;
+    const uint32_t position = load(&write_head);
+    const uint32_t queued = position - load(&read_tail);
+    if (queued >= E32_TX_RING_SAMPLES) {
+        ++counters.ring_drops;
+        return false;
+    }
+    pcm_ring.mpx_q4[position & RING_MASK] = sample;
+    // Publish the sample to the RF core only after writing the ring slot.
+    store(&write_head, position + 1);
+    if (queued + 1 > counters.max_queue) counters.max_queue = queued + 1;
     return true;
 }
 uint32_t IRAM_ATTR e32_tx_pcm_played(void){return pcm12_mode?load(&read_tail):0;}
@@ -151,13 +152,13 @@ static inline __attribute__((always_inline)) void wait_until(uint32_t deadline,v
     while(load(&armed) && (int32_t)(cycles()-deadline)<0)pump(user);
 }
 
-static inline __attribute__((always_inline)) bool emit_minimum_pulse(uint32_t width,unsigned fraction_bits) {
+static inline __attribute__((always_inline)) bool emit_minimum_pulse(uint32_t area, uint32_t minimum_area) {
     uint32_t random=pulse_random;
     random^=random<<13;
     random^=random>>17;
     random^=random<<5;
     pulse_random=random;
-    return (random&0xffffu)*(MIN_PULSE_CYCLES<<fraction_bits)<(width<<16);
+    return (random & 0xffffu) * minimum_area < (area << 16);
 }
 
 static inline __attribute__((always_inline)) void emit_level(unsigned nearest_k,int32_t target,
@@ -166,20 +167,22 @@ static inline __attribute__((always_inline)) void emit_level(unsigned nearest_k,
     int32_t area=target+phase_debt;
     const bool up=area>=0;
     const uint32_t magnitude_area=magnitude(area);
+    const int32_t minimum = fraction_bits ? E32_TX_MPX_MIN_CYCLES : MIN_PULSE_CYCLES;
+    const uint32_t minimum_area = (uint32_t)minimum << fraction_bits;
     int32_t width;
     // Randomize sub-minimum corrections to break patterns coherent with the
     // stereo pilot. Subtract only the correction actually emitted below.
-    if(magnitude_area<((uint32_t)MIN_PULSE_CYCLES<<fraction_bits))
-        width=magnitude_area && emit_minimum_pulse(magnitude_area,fraction_bits)?MIN_PULSE_CYCLES:0;
+    if(magnitude_area<minimum_area)
+        width=magnitude_area && emit_minimum_pulse(magnitude_area,minimum_area)?minimum:0;
     else width=(magnitude_area+((1u<<fraction_bits)/2u))>>fraction_bits;
-    if(width>=MIN_PULSE_CYCLES) {
+    if(width>=minimum) {
         if(width>MAX_PULSE_CYCLES)width=MAX_PULSE_CYCLES;
         const uint32_t start=deadline-(SAMPLE_CYCLES+(uint32_t)width)/2u;
         wait_until(start,pump,user);
         if(!load(&armed))return;
         const int32_t room=(int32_t)(deadline-cycles())-EXIT_CYCLES-TONE_WRITE_CYCLES;
         if(width>room)width=room;
-        if(width>=MIN_PULSE_CYCLES) {
+        if(width>=minimum) {
             e32_tx_radio_write_k((unsigned)((int)nearest_k+(up?1:-1)));
             const uint32_t pulse_start=cycles();
             const uint32_t stop=pulse_start+(uint32_t)(width-TONE_WRITE_CYCLES);
@@ -203,17 +206,15 @@ static void IRAM_ATTR emit_mpx(uint8_t sample,uint32_t deadline,void (*pump)(voi
     emit_level(level.nearest_k,(target+(target>=0?32768:-32768))/65536,0,deadline,pump,user);
 }
 
-static void IRAM_ATTR emit_pcm12(int16_t sample,uint32_t deadline,void (*pump)(void*),void *user) {
-    /* A signed 12-bit sample maps to +/-50 kHz. Q5 preserves the fractional
-     * phase area across pulse boundaries at Classic's 39,062.5 Hz NCO step. */
-    const int32_t step=SAMPLE_CYCLES*PCM12_AREA_SCALE;
-    const int64_t denominator=(int64_t)E32_TX_NCO_STEP_HZ_X2*PCM12_FULL_SCALE;
-    const int32_t slope=(step*100000LL*(1LL<<PCM12_SLOPE_BITS)+denominator/2)/denominator;
-    int32_t target=((int32_t)sample*slope+(int32_t)PCM12_SLOPE_ROUND)>>PCM12_SLOPE_BITS;
+static void IRAM_ATTR emit_mpx_q4(int16_t sample,uint32_t deadline,void (*pump)(void*),void *user) {
+    // Map the Q4 multiplex directly to phase area. Keep the Q9 remainder
+    // between slots while scheduling the radio in whole CPU cycles.
+    const int32_t step = SAMPLE_CYCLES * MPX_AREA_SCALE;
+    int32_t target = ((int32_t)sample * (int32_t)MPX_AREA_SLOPE + MPX_SLOPE_ROUND) >> MPX_SLOPE_BITS;
     unsigned nearest=E32_TX_NCO_CARRIER_CODE;
     if(target>step/2){++nearest;target-=step;}
     else if(target<-step/2){--nearest;target+=step;}
-    emit_level(nearest,target,PCM12_AREA_BITS,deadline,pump,user);
+    emit_level(nearest,target,MPX_AREA_BITS,deadline,pump,user);
 }
 
 void IRAM_ATTR e32_tx_run(void (*pump)(void*),void *user,void (*produce)(void*)) {
@@ -260,7 +261,7 @@ void IRAM_ATTR e32_tx_run(void (*pump)(void*),void *user,void (*produce)(void*))
         int16_t sample=0;
         if(queued>=consume) {
             const uint32_t offset=(tail+consume-1u)&RING_MASK;
-            if(pcm12_mode){sample=pcm_ring.pcm12[offset];counters.pcm_tail_underruns=0;}
+            if(pcm12_mode){sample=pcm_ring.mpx_q4[offset];counters.pcm_tail_underruns=0;}
             else sample=pcm_ring.legacy[offset];
             store(&read_tail,tail+consume);
         }
@@ -270,7 +271,7 @@ void IRAM_ATTR e32_tx_run(void (*pump)(void*),void *user,void (*produce)(void*))
             if(pcm12_mode)++counters.pcm_tail_underruns;
             if(protected_stream){last_fault="TX_UNDERRUN";store(&armed,0);break;}
         }
-        if(pcm12_mode)emit_pcm12(sample,deadline,pump,user);
+        if(pcm12_mode)emit_mpx_q4(sample,deadline,pump,user);
         else emit_mpx((uint8_t)sample,deadline,pump,user);
         ++counters.samples;
         wait_until(deadline,pump,user);

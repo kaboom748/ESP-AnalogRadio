@@ -12,6 +12,7 @@ extern "C" {
 #define E32_TX_IQ_HZ 120000u /* One MPX interval; modulation is native NCO. */
 #define E32_TX_RING_SAMPLES 16384u
 #define E32_TX_START_LEVEL 4096u
+#define E32_TX_MPX_Q4_FULL_SCALE (2047 * 16)
 typedef struct {
     uint32_t samples,underruns,zero_samples,timer_skips,ring_drops;
     uint32_t min_queue,max_queue,max_late_cycles,late_slots;
@@ -31,10 +32,8 @@ bool e32_tx_is_active(void);
 size_t e32_tx_free_samples(void);
 size_t e32_tx_queued_samples(void);
 size_t e32_tx_feed(const uint8_t *samples,size_t count);
-/* Signed, normalized PCM12 multiplex samples, already mixed at 120 kHz. */
-size_t e32_tx_feed_pcm12(const int16_t *samples,size_t count);
-/* Hot path for a single rendered PCM12 multiplex sample. */
-bool e32_tx_enqueue_pcm12(int16_t sample);
+/* Publish one 120 kHz multiplex sample with four fractional PCM bits. */
+bool e32_tx_enqueue_mpx_q4(int16_t sample);
 /* Played counts real PCM12 samples consumed from the ring. */
 uint32_t e32_tx_pcm_played(void);
 /* CPU cycles left in the active streaming pump window. */

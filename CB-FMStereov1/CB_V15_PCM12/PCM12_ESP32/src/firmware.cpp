@@ -205,8 +205,8 @@ bool IRAM_ATTR renderPcmTx(bool hot=false) {
     const uint32_t started=cycles();
     if(!e32_pcm_tx_dsp::pairPending())
         e32_pcm_tx_dsp::loadPair(frame+4+3*pcmIngress.pair);
-    const int16_t mpx=e32_pcm_tx_dsp::renderSample(frame+4+pcm12::TxAudioBytes);
-    tx.accepted+=e32_tx_enqueue_pcm12(mpx);
+    const int16_t mpxQ4=e32_pcm_tx_dsp::renderSampleQ4(frame+4+pcm12::TxAudioBytes);
+    tx.accepted+=e32_tx_enqueue_mpx_q4(mpxQ4);
     if(!e32_pcm_tx_dsp::pairPending() && ++pcmIngress.pair==pcm12::TxPairs) {
         pcmIngress.pair=0;
         pcmIngress.releaseFrame(index);

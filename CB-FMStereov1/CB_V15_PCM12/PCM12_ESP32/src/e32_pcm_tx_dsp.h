@@ -1,25 +1,27 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 #include <stdint.h>
+#include "e32_tx.h"
 #include "esp_attr.h"
 
 namespace e32_pcm_tx_dsp {
 
 constexpr unsigned RdsSideSamples = 30;
-constexpr int32_t FullScale = 2047;
 
-// The V5 36 -> 120 kHz Q14 polyphase interpolator. Phase zero is a delay.
-alignas(4) static const DRAM_ATTR int16_t Fir[10][10] = {
-    {0, 0, 0, 0, 0, 16384, 0, 0, 0, 0},
-    {68, -169, 350, -698, 1706, 15995, -1368, 605, -305, 144},
-    {143, -348, 712, -1429, 3683, 15189, -2356, 1073, -540, 252},
-    {219, -518, 1049, -2122, 5838, 13902, -2955, 1378, -693, 318},
-    {284, -656, 1320, -2697, 8060, 12214, -3181, 1512, -759, 343},
-    {329, -742, 1485, -3075, 10227, 10227, -3075, 1485, -742, 329},
-    {343, -759, 1512, -3181, 12214, 8060, -2697, 1320, -656, 284},
-    {318, -693, 1378, -2955, 13902, 5838, -2122, 1049, -518, 219},
-    {252, -540, 1073, -2356, 15189, 3683, -1429, 712, -348, 143},
-    {144, -305, 605, -1368, 15995, 1706, -698, 350, -169, 68},
+// 36 -> 120 kHz Q14 interpolator. The 17.7 kHz sinc uses a Kaiser window
+// (beta 4.6) and eight input samples of delay. Mirror the fractional phases
+// and normalize each coefficient row to 16384 for unity gain at DC.
+alignas(4) static const DRAM_ATTR int16_t Fir[10][16] = {
+    {0, 37, -71, 113, -158, 202, -240, 264, 16090, 264, -240, 202, -158, 113, -71, 37},
+    {-26, 72, -144, 249, -398, 614, -983, 1996, 15854, -1158, 437, -186, 72, -19, -1, 5},
+    {-39, 104, -212, 377, -624, 1010, -1728, 3971, 15098, -2226, 996, -518, 272, -135, 60, -22},
+    {-49, 131, -267, 481, -811, 1348, -2402, 6096, 13877, -2920, 1402, -769, 426, -224, 107, -42},
+    {-57, 147, -301, 547, -936, 1587, -2928, 8265, 12270, -3245, 1634, -924, 525, -283, 137, -54},
+    {-59, 150, -308, 564, -978, 1692, -3231, 10362, 10362, -3231, 1692, -978, 564, -308, 150, -59},
+    {-54, 137, -283, 525, -924, 1634, -3245, 12270, 8265, -2928, 1587, -936, 547, -301, 147, -57},
+    {-42, 107, -224, 426, -769, 1402, -2920, 13877, 6096, -2402, 1348, -811, 481, -267, 131, -49},
+    {-22, 60, -135, 272, -518, 996, -2226, 15098, 3971, -1728, 1010, -624, 377, -212, 104, -39},
+    {5, -1, -19, 72, -186, 437, -1158, 15854, 1996, -983, 614, -398, 249, -144, 72, -26},
 };
 
 // The pilot and the two subcarriers share a phase origin and sample clock.
@@ -103,70 +105,59 @@ static inline __attribute__((always_inline)) int16_t mix(int32_t leftQ4, int32_t
     const int32_t rds = (rdsInterpolated * RdsCarrier[mpxPhase] + 128) >> 8;
     rdsInterpolated += rdsStep;
     if (++rdsPhase == 12) rdsPhase = 0;
-    const int32_t mpx = (programme + Pilot[mpxPhase] + rds + 8) >> 4;
+    // Preserve the four fractional bits through the handoff to the RF core.
+    const int32_t mpx = programme + Pilot[mpxPhase] + rds;
     if (++mpxPhase == 120) mpxPhase = 0;
-    if (mpx > FullScale) return FullScale;
-    if (mpx < -FullScale) return -FullScale;
+    if (mpx > E32_TX_MPX_Q4_FULL_SCALE) return E32_TX_MPX_Q4_FULL_SCALE;
+    if (mpx < -E32_TX_MPX_Q4_FULL_SCALE) return -E32_TX_MPX_Q4_FULL_SCALE;
     return int16_t(mpx);
 }
 
 // The Classic LX6 MAC16 reads two signed halfwords from an aligned word.
 // Process each channel in order using its 40-bit accumulator. The sum of
-// ten products fits in 32 bits, so ACCLO contains the complete result.
-#define E32_FIR_MAC_PAIR(First, Second, Coefficient, Newer, Older) \
+// sixteen products fits in 32 bits, so ACCLO contains the complete result.
+#define E32_FIR_MAC_PAIR(First, Second, CoefficientOffset, Newer, Older) \
+    "l32i %[coefficient], %[coefficients], " #CoefficientOffset "\n\t" \
     "l32i %[sample], %[pairs], " #Newer "\n\t" \
-    First " %[sample], %[" #Coefficient "]\n\t" \
+    First " %[sample], %[coefficient]\n\t" \
     "l32i %[sample], %[pairs], " #Older "\n\t" \
-    Second " %[sample], %[" #Coefficient "]\n\t"
+    Second " %[sample], %[coefficient]\n\t"
+
+#define E32_FIR_MAC_CHANNEL(Start, AccumulateLow, AccumulateHigh) \
+    E32_FIR_MAC_PAIR(Start,         AccumulateHigh,  0, 60, 56) \
+    E32_FIR_MAC_PAIR(AccumulateLow, AccumulateHigh,  4, 52, 48) \
+    E32_FIR_MAC_PAIR(AccumulateLow, AccumulateHigh,  8, 44, 40) \
+    E32_FIR_MAC_PAIR(AccumulateLow, AccumulateHigh, 12, 36, 32) \
+    E32_FIR_MAC_PAIR(AccumulateLow, AccumulateHigh, 16, 28, 24) \
+    E32_FIR_MAC_PAIR(AccumulateLow, AccumulateHigh, 20, 20, 16) \
+    E32_FIR_MAC_PAIR(AccumulateLow, AccumulateHigh, 24, 12,  8) \
+    E32_FIR_MAC_PAIR(AccumulateLow, AccumulateHigh, 28,  4,  0)
 
 static inline __attribute__((always_inline)) void filterStereo(
     const Stereo* oldest, const int16_t* coefficients, int32_t& left, int32_t& right) {
-    uint32_t sample, c0, c1, c2, c3, c4;
+    uint32_t sample, coefficient;
     asm volatile(
-        "l32i %[c0], %[coefficients], 0\n\t"
-        "l32i %[c1], %[coefficients], 4\n\t"
-        "l32i %[c2], %[coefficients], 8\n\t"
-        "l32i %[c3], %[coefficients], 12\n\t"
-        "l32i %[c4], %[coefficients], 16\n\t"
-        E32_FIR_MAC_PAIR("mul.aa.ll", "mula.aa.lh", c0, 36, 32)
-        E32_FIR_MAC_PAIR("mula.aa.ll", "mula.aa.lh", c1, 28, 24)
-        E32_FIR_MAC_PAIR("mula.aa.ll", "mula.aa.lh", c2, 20, 16)
-        E32_FIR_MAC_PAIR("mula.aa.ll", "mula.aa.lh", c3, 12, 8)
-        E32_FIR_MAC_PAIR("mula.aa.ll", "mula.aa.lh", c4, 4, 0)
+        E32_FIR_MAC_CHANNEL("mul.aa.ll", "mula.aa.ll", "mula.aa.lh")
         "rsr.ACCLO %[left]\n\t"
-        E32_FIR_MAC_PAIR("mul.aa.hl", "mula.aa.hh", c0, 36, 32)
-        E32_FIR_MAC_PAIR("mula.aa.hl", "mula.aa.hh", c1, 28, 24)
-        E32_FIR_MAC_PAIR("mula.aa.hl", "mula.aa.hh", c2, 20, 16)
-        E32_FIR_MAC_PAIR("mula.aa.hl", "mula.aa.hh", c3, 12, 8)
-        E32_FIR_MAC_PAIR("mula.aa.hl", "mula.aa.hh", c4, 4, 0)
+        E32_FIR_MAC_CHANNEL("mul.aa.hl", "mula.aa.hl", "mula.aa.hh")
         "rsr.ACCLO %[right]"
         : [left] "=&a" (left), [right] "=&a" (right), [sample] "=&a" (sample),
-          [c0] "=&a" (c0), [c1] "=&a" (c1), [c2] "=&a" (c2), [c3] "=&a" (c3), [c4] "=&a" (c4)
+          [coefficient] "=&a" (coefficient)
         : [pairs] "a" (oldest), [coefficients] "a" (coefficients)
         : "memory");
 }
 
+#undef E32_FIR_MAC_CHANNEL
 #undef E32_FIR_MAC_PAIR
 
 // The envelope remains valid until the current 108-pair packet is consumed.
-static int16_t IRAM_ATTR __attribute__((optimize("O2"), unused)) renderSample(const uint8_t* envelope) {
+static int16_t IRAM_ATTR __attribute__((optimize("O2"), unused)) renderSampleQ4(const uint8_t* envelope) {
     const uint8_t phase = interpolationPhase;
     interpolationPhase += 3;
     const Stereo* current = &history[historyAt + 16];
-    if (phase == 0) {
-        const Stereo delayed = current[-5];
-        return mix(delayed.left * 16, delayed.right * 16, envelope);
-    }
     int32_t left, right;
-    filterStereo(current - 9, Fir[phase], left, right);
+    filterStereo(current - 15, Fir[phase], left, right);
     return mix((left + 512) >> 10, (right + 512) >> 10, envelope);
-}
-
-static inline unsigned renderPair(const uint8_t* stereo, const uint8_t* envelope, int16_t output[4]) {
-    loadPair(stereo);
-    unsigned count = 0;
-    do { output[count++] = renderSample(envelope); } while (pairPending());
-    return count;
 }
 
 }  // namespace e32_pcm_tx_dsp
