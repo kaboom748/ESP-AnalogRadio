@@ -2,7 +2,7 @@
 
 Run this 2.4 or 5 GHz firmware with the [V15 universal HTML](../CB_FM_STEREO-Universal.html). The shared UART is **1.5 Mbaud, 8N1**. The ESP receives **12-bit stereo PCM at 36 kSa/s per channel**, builds the **120 kSa/s** stereo multiplex, and returns **12-bit stereo PCM at 40 kSa/s per channel** plus RDS baseband during reception.
 
-Press PTT in the universal page to transmit the same MPX, including the stereo pilot and RDS, on both C5 oscillators simultaneously. The second centre is **234,375 Hz above the first**. Both oscillators follow the same modulation update. This applies to PCM12 and legacy MPX transmission.
+Press PTT in the universal page to transmit the same MPX, including the stereo pilot and RDS, on both C5 oscillators simultaneously. The second centre is **781,25 Hz above the first**. Both oscillators follow the same modulation update. This applies to PCM12 and legacy MPX transmission.
 
 The offset is six 39,062.5 Hz NCO steps. At nominal full deviation (±50 kHz) and a 60 kHz MPX edge, Carson's rule estimates about 220 kHz per signal. The five-step offset is below that estimate. Six steps give a nominal 14,375 Hz gap between those estimated bandwidths. Measure adjacent-channel leakage and intermodulation on the RF bench to confirm separation.
 
