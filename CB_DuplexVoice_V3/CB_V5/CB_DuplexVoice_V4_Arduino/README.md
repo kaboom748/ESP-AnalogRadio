@@ -1,9 +1,5 @@
-# CB Duplex Voice V4 — Arduino firmware
+# CB Duplex Voice V5 firmware for ESP8266
 
-The RF timing, PCM8 pulse generation, DPX1 packet framing, marker timing, APWR range checks (0..191), and role logic are **identical to V3**. Only the filename/folder is adjusted for Arduino IDE.
+Open [CB_DuplexVoice_V4_Arduino.ino](CB_DuplexVoice_V4_Arduino.ino) with the ESP8266 board package and set the CPU to **160 MHz**. Open the [V5 EASY browser app](../CB_DuplexVoice_EASY_HTML/) and connect over **460,800 baud, 8N2**.
 
-All amplitude companding and TDD-notch processing for V4 are on the **browser HTML/JavaScript** side. If V3 firmware is already working on your ESP8266 boards, **you do not need to reflash**.
-
-If you do flash the sketch, use the original ESP8266 configuration at 160 MHz, USB serial 460800 baud 8N2. V4 has not been RF-tested or compiled against a physical board in this environment.
-
-This is an experimental, uncalibrated transmission system. Use legal, attenuated or shielded RF testing arrangements and confirm applicable 2.4 GHz radio rules.
+The V5 download keeps the V4 filename because the sketches in V4 and V5 are identical. An ESP8266 already running that firmware can switch to the V5 web interface without reflashing. The browser handles companding and the playback notch. The radio works on 2.4 GHz. See the [V5 manual](../) for the station settings and troubleshooting.

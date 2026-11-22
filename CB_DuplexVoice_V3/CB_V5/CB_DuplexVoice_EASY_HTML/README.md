@@ -1,6 +1,8 @@
-# CB Duplex Voice V4 — Audio Fidelity and TDD Noise Filtering
+# CB Duplex Voice V5 browser app
 
-Independent experimental ESP8266 TDD prototype, **not** an update to CB FM Stereo V12. Preserves the V3 radio protocol, Master/Slave/passive roles, diagnostic banks and low-latency audio. All user-interface text is in English.
+Open [index.html](index.html) in desktop Chrome or Edge for the EASY front panel and advanced diagnostics. The bundled [V4 standalone page](CB_DuplexVoice_V4_STANDALONE.html) provides the earlier advanced interface.
+
+The app pairs with the [V5-bundled Arduino sketch](../CB_DuplexVoice_V4_Arduino/) using 460,800 baud (8N2). Set the same channel, TDD timing and companding on both radios. The EASY default is **Medium (mu-law 63)**. Use **PORT**, then **ANSWER** on one station and **CALL** on the other. See the [V5 manual](../) for the controls, measurements and troubleshooting.
 
 ## What changed in V4
 
@@ -8,7 +10,7 @@ Independent experimental ESP8266 TDD prototype, **not** an update to CB FM Stere
 
 - `Off` — original linear PCM8 from V3 (baseline comparison).
 - `Medium` — symmetric, reversible mu-law companding with mu=63.
-- **`Strong` (default)** — symmetric, reversible mu-law companding with mu=255. It transmits weak signals as larger PCM8 excursions, then expands them on RX. This avoids the large DC RF-frequency offset associated with adding a constant bias. Strong settings may slightly increase quantization error on loud signals; compare modes by measurement.
+- `Strong` — symmetric, reversible mu-law companding with mu=255. It transmits weak signals as larger PCM8 excursions, then expands them on RX. This avoids the large DC RF-frequency offset associated with adding a constant bias. Strong settings may slightly increase quantization error on loud signals; compare modes by measurement.
 - The compander operates in the HTML DSP **on TX and RX**. **All stations (including passive listeners) must select the same mode before connecting**. A mismatch causes nonlinear, incorrect audio. This is *not* a transparent over-the-air format to V3 when Medium/Strong is used.
 - `-128` is still reserved for the serial STOP/erasure code and is never emitted as a PCM sample.
 
@@ -17,14 +19,6 @@ Independent experimental ESP8266 TDD prototype, **not** an update to CB FM Stere
 - A narrow bank of notch filters reduces the clock-related audible lines near the TX burst rate and its harmonics. At TDD 20/8 the first notch is around **1500 Hz**; at 12/4 it is **2142.9 Hz**.
 - The filter is applied **locally to playback**. It does **not** change TX, RF timing, power or DPX1 frames, and it can be toggled while connected. The notch can remove a genuine music tone near exactly those frequencies; disable it to compare.
 - The diagnostic results continue using restored PCM before the notch (otherwise the 1500 Hz benchmark tone would fail solely because of the local playback filter).
-
-## How to start
-
-1. Keep your **V2/V3 TDD Arduino firmware** if it is already working. V4 ships the same RF sketch (renamed only to match the Arduino directory); **reflashing is optional**.
-2. Extract the project. Open `CB_DuplexVoice_V4_HTML/index.html` in current Chrome or Edge. Alternatively use the included `CB_DuplexVoice_V4_STANDALONE.html` (single file), or serve the directory from `http://localhost` if the browser blocks `file://` worklets.
-3. On **both stations**, choose the same frequency, TDD timing, and **On-air amplitude encoding** before connecting. Start with **20/8 / Strong / TDD filter ON**.
-4. Click `Connect & Listen`, then use `PTT` on one station to become Master, then on the other station to become the Slave speaker.
-5. Compare Voice vs Music, weak sounds, and notch on/off. Use headphones to avoid acoustic feedback.
 
 ## RF & Audio Diagnostics
 
@@ -44,11 +38,11 @@ The existing V3 diagnostic banks, auto-return Master→Slave→Master, downloada
 
 ## Files
 
-- `index.html`, `style.css` — V4 interface and additive fidelity controls.
+- `index.html`, `style.css`, `facade-ui.js`, `facade.css` — EASY and advanced interfaces.
 - `signal-shaping.js` — symmetric compander/expander and PCM8 mapping.
 - `voice-dsp.js` — uses compander for TX/RX and local notch filter for playback.
 - `diagnostics.js` — transmits/receives test tones using the chosen companding mode.
 - `diagnostics-ui.js` — offline loopback uses the same mode.
 - `app.js` — session UI and setting propagation.
 - `audio-engine.js` — unchanged audio capture/worklet/low-latency playback from V3.
-- `CB_DuplexVoice_V4_STANDALONE.html` — self-contained version of the multi-file UI.
+- `CB_DuplexVoice_V4_STANDALONE.html` — original V4 advanced interface in one file.
