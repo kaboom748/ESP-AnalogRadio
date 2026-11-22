@@ -11,7 +11,6 @@ PCM 12 bits (high quality analog audio for a cheap WIFI chip...).... RX-HQ-EXAMP
 **Try it with the board you already have.** ESP8266, ESP32 Classic, ESP32-C6, and ESP32-C5 all run the current stereo FM project. A C5 opens up a second RF band at 5 GHz. [Start with C.B. FM Stereo V15](#cb-fm-stereo-v15) · [Watch the demo](CB-FMStereov1/exampleCB.mp4) · [Compare the four boards](#how-the-four-radios-compare)
 
 <img width="1657" height="754" alt="Capture d’écran 2026-11-08 170647" src="https://github.com/user-attachments/assets/5fb3ae29-c23d-423c-8428-9148698146bb" />
-<img width="1013" height="865" alt="Capture d’écran 2026-11-08 083312" src="https://github.com/user-attachments/assets/581b1049-cab8-4d06-9ce0-91fc687d9722" />
 RX AND TX SUPPORTED !!!!!!!!!
 # ESP-AnalogRadio
 
