@@ -1,4 +1,5 @@
 <img width="635" height="566" alt="Capture d’écran 2026-11-22 185144" src="https://github.com/user-attachments/assets/08cf7af8-9f2b-4c22-8ada-88e1c368d45a" />
+
 # V15 PCM12 dual-carrier test for ESP32-C5
 
 Run this 2.4 or 5 GHz firmware with the [V15 universal HTML](../CB_FM_STEREO-Universal.html). The shared UART is **1.5 Mbaud, 8N1**. The ESP receives **12-bit stereo PCM at 36 kSa/s per channel**, builds the **120 kSa/s** stereo multiplex, and returns **12-bit stereo PCM at 40 kSa/s per channel** plus RDS baseband during reception.
