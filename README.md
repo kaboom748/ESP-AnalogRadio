@@ -4,6 +4,8 @@ PCM 12 bits (high quality analog audio for a cheap WIFI chip...)....
 
 “No soldering, no extra components: all you need is an ESP8266 D1 Mini and its serial port to broadcast analog FM stereo.”
 
+"Keep the web page visible in the active tab in Chrome or Edge. Switching tabs or minimizing the browser can cause background throttling, which may interrupt the serial data stream and disconnect the device."
+
 **Turn a pocket-sized ESP board into an analog radio station.** With a USB cable and a browser, you can send live stereo FM between two boards, tune in with an SDR, or experiment with AM and single sideband. The ESP's built-in RF hardware does the transmitting and receiving. The browser gives you a microphone, speakers, tuning controls, and a radio-style front panel.
 
 **Try it with the board you already have.** ESP8266, ESP32 Classic, ESP32-C6, and ESP32-C5 all run the current stereo FM project. A C5 opens up a second RF band at 5 GHz. [Start with C.B. FM Stereo V15](#cb-fm-stereo-v15) · [Watch the demo](CB-FMStereov1/exampleCB.mp4) · [Compare the four boards](#how-the-four-radios-compare)
