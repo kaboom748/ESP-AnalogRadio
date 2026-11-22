@@ -4,6 +4,10 @@ PCM 12 bits (high quality analog audio for a cheap WIFI chip...)....
 
 “No soldering, no extra components: all you need is an ESP8266 D1 Mini and its serial port to broadcast analog FM stereo.”
 
+**Turn a pocket-sized ESP board into an analog radio station.** With a USB cable and a browser, you can send live stereo FM between two boards, tune in with an SDR, or experiment with AM and single sideband. The ESP's built-in RF hardware does the transmitting and receiving. The browser gives you a microphone, speakers, tuning controls, and a radio-style front panel.
+
+**Try it with the board you already have.** ESP8266, ESP32 Classic, ESP32-C6, and ESP32-C5 all run the current stereo FM project. A C5 opens up a second RF band at 5 GHz. [Start with C.B. FM Stereo V15](#cb-fm-stereo-v15) · [Watch the demo](CB-FMStereov1/exampleCB.mp4) · [Compare the four boards](#how-the-four-radios-compare)
+
 <img width="1657" height="754" alt="Capture d’écran 2026-11-08 170647" src="https://github.com/user-attachments/assets/5fb3ae29-c23d-423c-8428-9148698146bb" />
 <img width="1013" height="865" alt="Capture d’écran 2026-11-08 083312" src="https://github.com/user-attachments/assets/581b1049-cab8-4d06-9ce0-91fc687d9722" />
 RX AND TX SUPPORTED !!!!!!!!!
@@ -14,6 +18,8 @@ RX AND TX SUPPORTED !!!!!!!!!
 <img width="242" height="253" alt="Capture d’écran 2026-11-07 225722" src="https://github.com/user-attachments/assets/31b59c63-1240-405f-b9bf-f9ac9f0b9df7" />
 <img width="1087" height="1011" alt="Capture d’écran 2026-11-07 145341" src="https://github.com/user-attachments/assets/f1d2ebef-0edf-4123-a1dd-574c613a6238" />
 <img width="1007" height="874" alt="2" src="https://github.com/user-attachments/assets/ccd4b288-7853-4c76-a9a0-d599a4caa745" />
+
+The current repository supports transmit and receive on several ESP families. The original ESP8266 Web Serial guides below cover the four standalone transmitters and their earlier bench results. See [Choose a current project](#choose-a-current-project) for the newer transceivers, receivers, and ESP32-C5 ports.
 
 This project transmits AM and FM signals in the 2.4 GHz band, outside the tuning range of standard AM/FM radios. To receive these signals, use a 2.4 GHz-capable software-defined radio (SDR), such as a HackRF, and select the matching demodulation mode.
 
@@ -32,6 +38,9 @@ On the HackRF bench, the mono FM build reached **27.49 dB tone SNR**, and the st
 
 ## Contents
 
+- [Choose a current project](#choose-a-current-project)
+- [C.B. FM Stereo V15](#cb-fm-stereo-v15)
+- [How the four radios compare](#how-the-four-radios-compare)
 - [Choose a build](#choose-a-build)
 - [Hardware and firmware setup](#hardware-and-firmware-setup)
 - [Run a Web Serial build](#run-a-web-serial-build)
@@ -44,7 +53,55 @@ On the HackRF bench, the mono FM build reached **27.49 dB tone SNR**, and the st
 - [Troubleshooting](#troubleshooting)
 - [Gallery and credits](#gallery-and-credits)
 
+## Choose a current project
+
+| What do you want to try? | Start here |
+| --- | --- |
+| Talk or send stereo audio between two ESPs | [C.B. FM Stereo V15 PCM12](CB-FMStereov1/CB_V15_PCM12/README.md). One browser interface for all four boards, with push-to-talk, stereo FM, RDS, and DTMF. |
+| Keep an older MPX stereo FM station in service | [C.B. FM Stereo V14](CB-FMStereov1/CB_V14/) uses the MPX workflow. Find other generations in the [C.B. FM Stereo guide](CB-FMStereov1/README.md). |
+| Have a two-way mono voice conversation | [C.B. Duplex Voice V7 beta](CB_DuplexVoice_V3/CB_V7beta/README.md) alternates short TX and RX slots on one 2.4 GHz carrier, including on the C5. Use its dedicated browser app. |
+| Experiment with AM | [AM transmitter](AMSerialHQv1/README.md) and [AM receiver](AM-RX-YEAHHHHHv1/README.md) for the ESP8266 or the dual-band ESP32-C5 ports. |
+| Play a file over mono or stereo FM | [Mono WFM](FMSerialHQv1/README.md), [stereo FM v1](FMStereoHQv1/README.md), [stereo FM v2](FMStereoHQv2/README.md), or [stereo FM v3 with optional RDS](FMStereoHQv3/README.md). |
+| Listen to stereo FM and decode RDS | [Standalone ESP8266 stereo FM receiver](FMStereoRX-YEAHHHHHv1/README.md). Use C.B. FM Stereo with a C5 for a 5 GHz receiver. |
+| Explore upper and lower sideband | [SSB transmitter](SSBTestv1/README.md) for the ESP8266 or C5, and [SSB receiver](SSB-RX-YEAHHHHHv1/README.md) for the ESP8266. |
+| Move a file through an FM link | [Simplex file modem](MODEM-SimplexV1/README.md) with separate transmit and receive stations, forward error correction, and a final SHA-256 file check. |
+| Upload a clip over Wi-Fi for playback from flash | [Wi-Fi-only ESP8266 builds](WIFIOnlyTest/README.md) for AM, mono FM, and SSB. |
+
+## C.B. FM Stereo V15
+
+V15 moves the transmit stereo encoder into the ESP. Send **12-bit left and right PCM over USB serial**, and the firmware builds the FM multiplex with the 19 kHz stereo pilot and RDS. The transmit mixer keeps **16 bits of internal MPX precision**. That is the precision of the calculation. Effective RF audio resolution depends on the modulator, timing, and measured noise.
+
+| Board | RF bands in V15 | Browser → ESP (TX) | ESP → browser (RX) |
+| --- | --- | --- | --- |
+| ESP8266 | 2.4 GHz | PCM12 | MPX. The browser decodes stereo and RDS. |
+| ESP32 Classic | 2.4 GHz | PCM12 | PCM12 |
+| ESP32-C6 | 2.4 GHz | PCM12 | PCM12 |
+| ESP32-C5 | 2.4 and 5 GHz | PCM12 | PCM12 |
+
+**Get on the air with two boards.** Flash the matching [V15 firmware](CB-FMStereov1/CB_V15_PCM12/README.md), open a local copy of [CB_FM_STEREO-Universal.html](CB-FMStereov1/CB_V15_PCM12/CB_FM_STEREO-Universal.html) for each station in desktop Chrome or Edge, and connect each board to its own serial port. Set both stations to the same RF frequency. Start at **2442.3125 MHz** for a common 2.4 GHz test. Use two C5 boards for an ESP-to-ESP link at 5 GHz. Hold the spacebar or the on-screen microphone to transmit, then release to listen.
+
+The universal page uses **1,500,000 baud, 8N1**. It reads each board's capabilities and chooses TX and RX formats independently. Compatible protocol-4 V13 and V14 firmware use the legacy MPX path with the same page. Match firmware and HTML by release for older serial protocols, including the earlier [C5 5 GHz beta](CB-FMStereov1/CB_V13_5GHZ_C5_BETA/). The standalone AM, FM, SSB, modem, and Duplex Voice projects use their own pages.
+
+## How the four radios compare
+
+The ESP8266 produced the cleanest 2.4 GHz FM transmission on the project bench. The C6 was the lowest-residual 2.4 GHz option measured with PCM12 in both directions. The Classic uses two cores in the tested build to share audio preparation and radio timing. The C5 gives you the choice of 2.4 or 5 GHz.
+
+| Board | V15 transmit FM residual | What you get |
+| --- | --- | --- |
+| **ESP8266** | **70.4 Hz RMS** at 2442.3125 MHz and **69.9 Hz RMS** at 2472.3125 MHz | The lowest observed 2.4 GHz FM residual, with PCM12 TX and browser-side MPX decoding on RX. |
+| **ESP32-C6** | **87.5–90.3 Hz RMS** at 2442.3125 MHz and **88.2 Hz RMS** at 2472.3125 MHz | Full PCM12 TX/RX. The high-level transmit test ran **30.3 seconds** without an underrun. |
+| **ESP32 Classic** | **106.7–109.0 Hz RMS** at 2442.3125 MHz | Full PCM12 TX/RX and a dual-core build that shares the audio and RF workload. |
+| **ESP32-C5** | **165.9 Hz RMS** at **5745 MHz**, measured in a separate 5 GHz run | Full PCM12 TX/RX on both bands. A second band means more choice when the 2.4 GHz band is busy. |
+
+The HackRF Pro measurements integrate unwanted FM deviation from **300 Hz to 15 kHz** after removing the 1 kHz test tone. Lower numbers indicate a cleaner capture under those conditions. The 2.4 GHz runs used `APWR 20` and the C5's separate 5 GHz run used `APWR 63`. The residual includes contributions from the transmitter, receiver, and local RF conditions. The four boards' receive sensitivity and range would require a separate calibrated comparison. [V15 bench details](CB-FMStereov1/CB_V15_PCM12/README.md#radio-bench-results)
+
+The native synthesizer step used here is **78.125 kHz** on the ESP8266 and **39.0625 kHz** on the three ESP32 targets. Timed changes between steps let the modulator produce finer average deviation. The ESP8266 result shows why measured audio quality is a better guide than the step size alone.
+
+The repository also includes separate RF characterization reports. [ESP8266](ESP8266_Out-of-Band_RF_Report.pdf) · [ESP32 Classic](ESP32_Classic_Out-of-Band_RF_Report.pdf) · [ESP32-C6](ESP32-C6_Out-of-Band_RF_Report.pdf) · [ESP32-C5](ESP32-C5_Out-of-Band_RF_Report.pdf)
+
 ## Choose a build
+
+This table describes the original ESP8266 builds and their default tuning. For the newer board and protocol combinations, use the [current project guide](#choose-a-current-project).
 
 | Project | Mode | Audio delivery | Nominal programme frequency | Nominal warm-up CW |
 | --- | --- | --- | ---: | ---: |
@@ -323,3 +380,6 @@ One startup capture showed roughly **3.94 kHz peak-to-peak drift** over **16.76 
 - **Wi-Fi RF handoff** — The PM1/PM0 approach in the Wi-Fi-only sketches builds on [ESPBoOm8266](https://github.com/kaboom748/ESPBoOm8266).
 - **License** — [GNU General Public License v3](LICENSE). See the notices in the individual sketches for upstream attribution.
 
+
+
+**Built a radio with ESP-AnalogRadio?** Star the repository, share a recording or waterfall capture, and tell other builders which board, band, and mode you tried. Measurements, compatibility reports, and improvements are welcome. [Share a build or report an issue](https://github.com/kaboom748/ESP-AnalogRadio/issues) · [Contribute a pull request](https://github.com/kaboom748/ESP-AnalogRadio/pulls)
