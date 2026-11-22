@@ -18,8 +18,7 @@ RX AND TX SUPPORTED !!!!!!!!!
 "A heatsink is only required at high transmit power, when APWR is set close to 0."
 <img width="736" height="406" alt="Capture d’écran 2026-11-07 230521" src="https://github.com/user-attachments/assets/e858f5bf-d72d-4f1c-be08-1dc2bbfd6a42" />
 <img width="242" height="253" alt="Capture d’écran 2026-11-07 225722" src="https://github.com/user-attachments/assets/31b59c63-1240-405f-b9bf-f9ac9f0b9df7" />
-<img width="1087" height="1011" alt="Capture d’écran 2026-11-07 145341" src="https://github.com/user-attachments/assets/f1d2ebef-0edf-4123-a1dd-574c613a6238" />
-<img width="1007" height="874" alt="2" src="https://github.com/user-attachments/assets/ccd4b288-7853-4c76-a9a0-d599a4caa745" />
+
 
 The current repository supports transmit and receive on several ESP families. The original ESP8266 Web Serial guides below cover the four standalone transmitters and their earlier bench results. See [Choose a current project](#choose-a-current-project) for the newer transceivers, receivers, and ESP32-C5 ports.
 
