@@ -645,6 +645,7 @@ class PcmEncoder {
     this.rate = inputRate;
     this.send = send;
     this.rdsEvent = rdsEvent;
+    this.peakLimit = .72;
     this.radius = 32;
     this.ringSize = 128;
     this.left = new Float32Array(this.ringSize);
@@ -715,7 +716,7 @@ class PcmEncoder {
   writePair(left, right) {
     // Use common gain and retain room for the device's pilot and RDS.
     const peak = Math.max(.001, Math.abs(left), Math.abs(right));
-    this.gain = Math.min(.72 / peak, this.gain + this.release * (.68 - this.gain));
+    this.gain = Math.min(this.peakLimit / peak, this.gain + this.release * (.68 - this.gain));
     const l = clamp(Math.round(left * this.gain * 2048), -2048, 2047) & 0xfff;
     const r = clamp(Math.round(right * this.gain * 2048), -2048, 2047) & 0xfff;
     const offset = TX_HEADER + 3 * this.pair;
@@ -1177,6 +1178,8 @@ class CBRadio extends AudioWorkletProcessor {
         const pcm = data.format === 'PCM12';
         if (this.mode === 'tx') {
           this.encoder = pcm ? this.pcmEncoder : this.mpxEncoder;
+          // Leave CPU time for UART ingress during long ESP8266 RF pulses.
+          if (pcm) this.pcmEncoder.peakLimit = data.hybridTx ? .55 : .72;
           this.encoder.reset();
         }
         this.decoder = this.mode === 'rx' && !pcm ? new StereoDecoder(data.profile, this.emphasisUs) : null;
@@ -1736,6 +1739,7 @@ registerProcessor('cb-radio', CBRadio);
   let micGeneration = 0;
   let signalDb = null;
   let noiseDb = null;
+  let manualNoiseFloor = false;
   let noiseWarmup = {seen: 0, levels: []};
   let noiseMeasurement = null;
   let lastSignalAt = 0;
@@ -1758,6 +1762,11 @@ registerProcessor('cb-radio', CBRadio);
   let txNextWriteAt = 0;
   let txCreditLimit = 0;
   let txFramesSent = 0;
+  let txReadyAt = 0;
+  let txLastCreditAt = 0;
+  let txWriteStartedAt = 0;
+  let txLastTrimAt = -Infinity;
+  let txSkippedFrames = 0;
   let returnAfterReady = false;
   const dtmfKeys = '123456789*0#';
   const dtmfRows = [697, 770, 852, 941];
@@ -2254,6 +2263,7 @@ registerProcessor('cb-radio', CBRadio);
     if (state === 'returning') returnAfterReady = true;
     if (state !== 'keying' || !pttHold) return;
     cancelTimer();
+    txReadyAt = performance.now();
     setState('tx', 'APWR ' + txApwr + ' applied. Preparing transmit audio…');
     pumpTx();
   }
@@ -2531,7 +2541,8 @@ registerProcessor('cb-radio', CBRadio);
     epoch++;
     playback = null;
     const format = (mode === 'tx' ? transmitFormat() : receiveFormat()).format;
-    audio?.node.port.postMessage({type: 'mode', mode, profile, epoch, format});
+    const hybridTx = mode === 'tx' && usesHybridTxFlow();
+    audio?.node.port.postMessage({type: 'mode', mode, profile, epoch, format, hybridTx});
     window.cbRds?.modeChange(mode, profile, epoch, audio?.node, format);
   }
   const idleVu = {meterL: -60, meterR: -60, peakL: false, peakR: false};
@@ -2783,6 +2794,88 @@ registerProcessor('cb-radio', CBRadio);
 <script data-source="rx.js">
 'use strict';
 
+  function pcmSquelchBand(center) {
+    // Equal bandwidths in the 40 kHz PCM stream let broadband FM noise
+    // produce similar power in the programme band and the upper audio band.
+    const damping = .12;
+    return {gain: damping / (1 + damping),
+      a1: -2 * Math.cos(2 * Math.PI * center / rxPcm.rates.HQ) / (1 + damping),
+      a2: (1 - damping) / (1 + damping), first: 0, second: 0};
+  }
+  const pcmProgrammeBands = [pcmSquelchBand(1600), pcmSquelchBand(1600)];
+  const pcmNoiseBands = [pcmSquelchBand(9800), pcmSquelchBand(9800)];
+  let pcmProgrammePower = 0;
+  let pcmNoisePower = 0;
+  let pcmIdleAudioNoiseDb = null;
+  let pcmNoiseSamples = 0;
+  const pcmNoiseLevels = [];
+  const pcmAudioNoiseLevels = [];
+
+  function resetPcmSquelch() {
+    pcmProgrammePower = pcmNoisePower = 0;
+    pcmNoiseSamples = 0;
+    clearPcmNoiseBlock();
+    for (const band of [...pcmProgrammeBands, ...pcmNoiseBands]) band.first = band.second = 0;
+  }
+  function pcmPower(band, sample) {
+    const output = sample * band.gain + band.first;
+    band.first = band.second - band.a1 * output;
+    band.second = -sample * band.gain - band.a2 * output;
+    return output * output;
+  }
+  function measurePcmProgramme(samples, offset, pairs) {
+    let programme = 0, noise = 0;
+    for (let i = offset; i < offset + 2 * pairs; i += 2) {
+      programme += pcmPower(pcmProgrammeBands[0], samples[i]) + pcmPower(pcmProgrammeBands[1], samples[i + 1]);
+      noise += pcmPower(pcmNoiseBands[0], samples[i]) + pcmPower(pcmNoiseBands[1], samples[i + 1]);
+    }
+    pcmProgrammePower += .04 * (programme / (2 * pairs) - pcmProgrammePower);
+    pcmNoisePower += .04 * (noise / (2 * pairs) - pcmNoisePower);
+  }
+  function pcmProgrammeDb() {
+    // One squared PCM count keeps digital silence from becoming a signal.
+    return 10 * Math.log10((1 + pcmProgrammePower) / (1 + pcmNoisePower));
+  }
+  function pcmAudioNoiseDb() {
+    return 10 * Math.log10(1 + pcmNoisePower);
+  }
+  function clearPcmNoiseBlock() {
+    pcmNoiseLevels.length = pcmAudioNoiseLevels.length = 0;
+  }
+  function trackPcmNoise() {
+    if (manualNoiseFloor) return;
+    const {pairs, rates} = rxPcm;
+    pcmNoiseSamples = Math.min(pcmNoiseSamples + pairs, rates.HQ);
+    if (pcmNoiseSamples < .22 * rates.HQ) return; // Let the receiver's AGC settle.
+    const audioNoise = pcmAudioNoiseDb();
+    const quieting = pcmIdleAudioNoiseDb === null ? 0 : pcmIdleAudioNoiseDb - audioNoise;
+    if (pcmNoisePower <= 1 || pcmProgrammeDb() >= 6 || quieting >= 6) {
+      clearPcmNoiseBlock();
+      return;
+    }
+    pcmNoiseLevels.push(signalDb);
+    pcmAudioNoiseLevels.push(audioNoise);
+    if (pcmNoiseLevels.length * pairs < .36 * rates.HQ) return;
+    const rfFloor = noisePercentile(pcmNoiseLevels);
+    const audioFloor = noisePercentile(pcmAudioNoiseLevels);
+    // Follow confirmed broadband noise blocks without letting individual
+    // deep fades or gain changes set an artificially low noise reference.
+    noiseDb = noiseDb === null ? rfFloor : noiseDb + clamp(rfFloor - noiseDb, -1, 2);
+    pcmIdleAudioNoiseDb = pcmIdleAudioNoiseDb === null ? audioFloor :
+      pcmIdleAudioNoiseDb + clamp(audioFloor - pcmIdleAudioNoiseDb, -1, 2);
+    clearPcmNoiseBlock();
+  }
+  function pcmSquelchMargin() {
+    const programme = pcmProgrammeDb();
+    if (noiseDb === null) return programme - 3;
+    const rfMargin = (signalDb ?? noiseDb) - noiseDb;
+    if (manualNoiseFloor || pcmIdleAudioNoiseDb === null) return rfMargin;
+    // Quiet broadband noise may reach an old RF reference after AGC shifts.
+    // Require programme or FM quieting relative to the learned audio floor.
+    const audioEvidence = Math.max(programme, pcmIdleAudioNoiseDb - pcmAudioNoiseDb());
+    return Math.min(rfMargin, 2 * (audioEvidence - 3));
+  }
+
   function setSquelch(open) {
     if (open === squelchOpen) return;
     squelchOpen = open;
@@ -2810,7 +2903,9 @@ registerProcessor('cb-radio', CBRadio);
     const level = Math.max(-85, 20 * Math.log10(Math.max(1, magnitude) / 30000));
     signalDb = signalDb === null ? level : signalDb + (level - signalDb) * .08;
     lastSignalAt = performance.now();
-    if (noiseDb === null) {
+    if (receiveFormat() === rxPcm) {
+      trackPcmNoise();
+    } else if (noiseDb === null) {
       if (!freshStereoPilot()) {
         const framesPerSecond = (activeTune?.rate ?? receiveFormat().rates.HQ) / receiveFormat().pairs;
         if (++noiseWarmup.seen >= .08 * framesPerSecond) {
@@ -2821,16 +2916,16 @@ registerProcessor('cb-radio', CBRadio);
           }
         }
       }
-    } else if (signalDb < noiseDb) {
-      noiseDb += (signalDb - noiseDb) * .07;
-    } else if (!squelchOpen && signalDb < noiseDb + 5) {
-      noiseDb += (signalDb - noiseDb) * .0005;
+    } else {
+      if (signalDb < noiseDb) noiseDb += (signalDb - noiseDb) * .07;
+      else if (!squelchOpen && signalDb < noiseDb + 5) noiseDb += (signalDb - noiseDb) * .0005;
     }
     if (noiseMeasurement && state === 'rx') {
       const {levels, frames} = noiseMeasurement;
       levels.push(signalDb);
       if (levels.length === frames) {
         noiseDb = noisePercentile(levels);
+        manualNoiseFloor = true;
         (serial.noiseReferences ??= new Map()).set(noiseReferenceKey(), noiseDb);
         noiseMeasurement = null;
       }
@@ -2839,7 +2934,8 @@ registerProcessor('cb-radio', CBRadio);
   }
   function updateSquelch(freshFrame = false) {
     const threshold = Number($('squelch').value);
-    const aboveNoise = signalDb === null || noiseDb === null ? 0 : Math.max(0, signalDb - noiseDb);
+    const pcm = receiveFormat() === rxPcm;
+    const aboveNoise = pcm ? pcmSquelchMargin() : (signalDb ?? noiseDb ?? 0) - (noiseDb ?? 0);
     const now = performance.now();
     if (!['rx', 'arming'].includes(state) || now - lastSignalAt > 180) {
       carrierSeenAt = 0;
@@ -2848,7 +2944,7 @@ registerProcessor('cb-radio', CBRadio);
     } else if (!threshold) {
       carrierSamples = 0;
       setSquelch(true);
-    } else if (noiseDb === null) {
+    } else if (noiseDb === null && !pcm) {
       // A station already on air is a valid stereo signal, not a noise reference.
       setSquelch(Boolean(freshStereoPilot()));
     } else {
@@ -2891,10 +2987,13 @@ registerProcessor('cb-radio', CBRadio);
     rxUsed = 0;
     rxPilotLocked = false;
     signalDb = null;
+    resetPcmSquelch();
     noiseWarmup = {seen: 0, levels: []};
     noiseMeasurement = null;
     if (!keepNoise) {
       noiseDb = serial?.noiseReferences?.get(noiseReferenceKey()) ?? null;
+      manualNoiseFloor = noiseDb !== null;
+      pcmIdleAudioNoiseDb = null;
     }
     lastSignalAt = 0;
     carrierSeenAt = 0;
@@ -2924,11 +3023,11 @@ registerProcessor('cb-radio', CBRadio);
     expectedIndex = (index + pairs) >>> 0;
     rxPilotLocked = pcm && Boolean(magnitude & 0x8000);
     if (gap) carrierSamples = 0;
-    updateSignal(pcm ? magnitude & 0x7fff : magnitude);
     if (gap) {
       missingFrames += Math.ceil(gap / pairs);
       if (gap > Math.ceil(activeTune.rate * .03)) {
         rxUsed = 0;
+        if (pcm) resetPcmSquelch();
         audioMode('rx', activeTune.profile);
         audio?.node.port.postMessage({type: 'squelch', open: squelchOpen});
       } else {
@@ -2951,10 +3050,12 @@ registerProcessor('cb-radio', CBRadio);
         buffer[out] = (left << 20) >> 20;
         buffer[out + 1] = (right << 20) >> 20;
       }
+      measurePcmProgramme(buffer, 2 * rxUsed, pairs);
     } else {
       if (activeTune.profile === 'HQ') window.cbRds?.feedRx(index, payload);
       buffer.set(payload, rxUsed);
     }
+    updateSignal(pcm ? magnitude & 0x7fff : magnitude);
     rxUsed += pairs;
     if (rxUsed >= activeTune.rate / 150) flushRx();
   }
@@ -2984,7 +3085,9 @@ registerProcessor('cb-radio', CBRadio);
     if (window.cbRds?.workletMessage(data)) return;
     if (data.type === 'rx-status') {
       playback = {...data, observedAt: performance.now()};
-      if (noiseDb === null && freshStereoPilot() && noiseWarmup.seen) noiseWarmup = {seen: 0, levels: []};
+      if (receiveFormat() === rxMpx && noiseDb === null && freshStereoPilot() && noiseWarmup.seen) {
+        noiseWarmup = {seen: 0, levels: []};
+      }
       updateSquelch();
       return;
     }
@@ -2995,17 +3098,7 @@ registerProcessor('cb-radio', CBRadio);
       if (state === 'tx') finishTransmit('Invalid audio block. Returning to receive.', true);
       return;
     }
-    if (queuedTxBytes >= format.queueLimit) {
-      if (format === txPcm) {
-        finishTransmit('The serial audio queue filled. Returning to receive.', true);
-        return;
-      }
-      txQueue.shift();
-      queuedTxBytes -= format.chunkBytes;
-    }
-    queuedTxBytes += samples.length;
-    txQueue.push(samples);
-    pumpTx();
+    queueTransmitSamples(samples, format);
   }
 
 </script>
@@ -3018,6 +3111,11 @@ registerProcessor('cb-radio', CBRadio);
     txNextWriteAt = 0;
     txCreditLimit = 0;
     txFramesSent = 0;
+    txReadyAt = 0;
+    txLastCreditAt = 0;
+    txWriteStartedAt = 0;
+    txLastTrimAt = -Infinity;
+    txSkippedFrames = 0;
     txQueue = [];
     queuedTxBytes = 0;
     txPrimed = false;
@@ -3025,8 +3123,64 @@ registerProcessor('cb-radio', CBRadio);
   function acceptTxCredit(limit) {
     if (!serial?.pcmFlow || !pttHold || !['keying', 'tx'].includes(state)) return;
     if (!Number.isInteger(limit) || limit < 0 || limit > 0xffffffff) return;
-    if (((limit - txCreditLimit) >>> 0) >= 0x80000000) return;
+    const advance = (limit - txCreditLimit) >>> 0;
+    if (!advance || advance >= 0x80000000) return;
+    txLastCreditAt = performance.now();
     txCreditLimit = limit;
+    pumpTx();
+  }
+  function usesHybridTxFlow() {
+    return Boolean(serial?.pcmFlow && serial.txFormat === txPcm && serial.rxFormat === rxMpx);
+  }
+  function txAvailableCredit() {
+    const available = (txCreditLimit - txFramesSent) >>> 0;
+    return available < 0x80000000 ? available : 0;
+  }
+  function hybridTxError(now) {
+    if (state !== 'tx') return '';
+    if (!txPrimed && now - txReadyAt >= 300) return 'The radio did not grant enough PCM12 credit to start.';
+    if (txWriting && now - txWriteStartedAt >= 140) return 'The serial audio write stalled.';
+    if (txPrimed && txAvailableCredit() === 0 && now - txLastCreditAt >= 140) {
+      return 'The radio stopped granting PCM12 credit.';
+    }
+    return '';
+  }
+  function transmittingStatus() {
+    const status = 'Transmitting stereo FM · APWR ' + txApwr;
+    return txSkippedFrames ? status + ' · skipped ' + (3 * txSkippedFrames) + ' ms of delayed audio.' : status + '.';
+  }
+  function queueTransmitSamples(samples, format) {
+    const hybrid = usesHybridTxFlow();
+    const now = hybrid ? performance.now() : 0;
+    const stalled = hybrid && hybridTxError(now);
+    if (stalled) {
+      finishTransmit(stalled + ' Returning to receive.', true);
+      return;
+    }
+    if (queuedTxBytes >= format.queueLimit) {
+      if (format === txPcm && !hybrid) {
+        finishTransmit('The serial audio queue filled. Returning to receive.', true);
+        return;
+      }
+      if (hybrid && txPrimed && now - txLastTrimAt < 2000) {
+        finishTransmit('The serial audio cannot keep up with the microphone. Returning to receive.', true);
+        return;
+      }
+      // Keep the most recent 48 ms when a transient delays the browser. The
+      // hybrid sender numbers the surviving PCM frames at write time.
+      const count = hybrid ? 1 + txQueue.length - format.prerollBytes / format.chunkBytes : 1;
+      txQueue.splice(0, count);
+      queuedTxBytes -= count * format.chunkBytes;
+      if (hybrid) {
+        txSkippedFrames += count;
+        if (txPrimed) {
+          txLastTrimAt = now;
+          message(transmittingStatus());
+        }
+      }
+    }
+    queuedTxBytes += samples.length;
+    txQueue.push(samples);
     pumpTx();
   }
   function pacePcmTx(batchMs) {
@@ -3051,25 +3205,35 @@ registerProcessor('cb-radio', CBRadio);
   function pumpTx() {
     if (state !== 'tx' || !pttHold || txWriting) return;
     const format = transmitFormat();
-    const writeBytes = format.batchFrames * format.chunkBytes;
-    if (queuedTxBytes < (txPrimed ? writeBytes : format.prerollBytes)) return;
     const own = serial;
     if (!own) return;
+    const hybrid = usesHybridTxFlow();
+    let count = format.batchFrames;
     if (own.pcmFlow) {
-      const available = (txCreditLimit - txFramesSent) >>> 0;
-      if (available < format.batchFrames || available >= 0x80000000) return;
+      const available = txAvailableCredit();
+      // On the hybrid, the firmware releases credit according to actual RF
+      // playback. Use that hardware clock instead of also waiting on JS timers.
+      if (hybrid) count = Math.min(4, available);
+      else if (available < count) return;
     }
-    if (format === txPcm && !pacePcmTx(format.batchMs)) return;
+    if (!count) return;
+    const writeBytes = count * format.chunkBytes;
+    if (queuedTxBytes < (txPrimed ? writeBytes : format.prerollBytes)) return;
+    if (format === txPcm && !hybrid && !pacePcmTx(format.batchMs)) return;
     if (!txPrimed) {
       txPrimed = true;
-      setState('tx', 'Transmitting stereo FM · APWR ' + txApwr + '.');
+      setState('tx', transmittingStatus());
     }
     const samples = new Uint8Array(writeBytes);
-    for (let offset = 0; offset < writeBytes; offset += format.chunkBytes) {
+    const header = hybrid ? new DataView(samples.buffer) : null;
+    for (let frame = 0; frame < count; frame++) {
+      const offset = frame * format.chunkBytes;
       samples.set(txQueue.shift(), offset);
+      if (header) header.setUint32(offset + 4, Math.imul(txFramesSent + frame, 108) >>> 0, true);
     }
     queuedTxBytes -= writeBytes;
-    txFramesSent = (txFramesSent + format.batchFrames) >>> 0;
+    txFramesSent = (txFramesSent + count) >>> 0;
+    if (hybrid) txWriteStartedAt = performance.now();
     txWriting = true;
     send(samples, own).catch(error => {
       if (serial === own) fail('Audio transmission failed · ' + error.message);
@@ -3495,6 +3659,8 @@ registerProcessor('cb-radio', CBRadio);
     const slider = element('input', {id: 'cb-easy-value', type: 'range', min: control.min, max: control.max,
       step: control.step || '1', value: control.value});
     const output = element('output', {value: valueLabel(id, Number(slider.value))});
+    const measure = id === 'squelch' ? element('button', {type: 'button', title: byId('calibrateNoise').title}) : null;
+    if (measure) measure.onclick = () => byId('calibrateNoise').click();
     output.setAttribute('for', slider.id);
     slider.oninput = () => setValue(id, slider.value);
     if (id === 'fine') slider.onchange = tuneIfListening;
@@ -3503,8 +3669,14 @@ registerProcessor('cb-radio', CBRadio);
       if (slider.value !== control.value) slider.value = control.value;
       output.value = valueLabel(id, Number(control.value));
       slider.setAttribute('aria-valuetext', output.value);
+      if (measure) {
+        const control = byId('calibrateNoise');
+        measure.disabled = control.disabled;
+        writeText(measure, control.textContent);
+      }
     };
     settingsBody.append(labeled(readouts[id].label, slider), output);
+    if (measure) settingsBody.append(measure);
     refreshSettings();
     slider.focus();
   }
