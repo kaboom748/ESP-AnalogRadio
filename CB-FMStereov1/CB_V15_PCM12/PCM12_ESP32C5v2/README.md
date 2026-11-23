@@ -1,3 +1,7 @@
+±75 kHz deviation can make the audio louder. Two overlapping carriers can improve range.
+- Audio volume — Going from ±50 to ±75 kHz gives about 3.5 dB more demodulated audio level at the same receiver gain, provided the receiver can handle the wider signal.
+- Range — Two carriers on the same frequency can increase received RF power when they add in phase. In the ESP32‑C5 bench test at 5.745 GHz with ±100 kHz deviation, the two oscillators gave +5.9 dB over one oscillator at the same gain per oscillator. In ideal free space, that could nearly double the range at the same reception threshold.
+
 # ESP32-C5 PCM12 V2 — Dual-carrier FM stereo at ±75 kHz
 
 This variant of the V15 PCM12 firmware transmits the same FM stereo signal through both ESP32-C5 numerically controlled oscillators (NCOs). It works with the V15 universal HTML interface over a 1.5 Mbaud UART connection.
