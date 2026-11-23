@@ -3,6 +3,8 @@
 
 CB_FM_STEREO-Universal-EQv2.html - EQUALIZER
 
+<img width="523" height="629" alt="Capture d’écran 2026-11-23 160825" src="https://github.com/user-attachments/assets/95b09988-1da8-4667-9750-38a46c5bde54" />
+
 Use the standalone [CB_FM_STEREO-Universal.html](CB_FM_STEREO-Universal.html) for all four board builds. It opens USB serial at **1,500,000 baud, 8N1**, checks for **CB_FM_STEREO protocol 4**, and negotiates the supported TX and RX formats separately. The same page uses MPX in both directions with compatible [V14](../CB_V14/README.md) or [V13](../CB_V13/README.md) firmware that does not offer PCM12. The 2 Mbaud historical releases use their own pages.
 
 | Board | Firmware | TX over USB | RX over USB | RF bands |
