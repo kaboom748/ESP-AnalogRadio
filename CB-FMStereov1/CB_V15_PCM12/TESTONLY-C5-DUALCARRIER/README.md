@@ -1,4 +1,6 @@
 <img width="1074" height="717" alt="Capture d’écran 2026-11-22 185144" src="https://github.com/user-attachments/assets/6e34ebde-4ee8-4fa6-952b-1a46d8eed6ed" />
+Carrier 1: ±50 kHz peak deviation
+Carrier 2: ±100 kHz peak deviation
 
 # V15 PCM12 dual-carrier test for ESP32-C5
 
