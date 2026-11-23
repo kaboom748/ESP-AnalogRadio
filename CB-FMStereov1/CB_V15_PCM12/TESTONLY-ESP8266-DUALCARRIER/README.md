@@ -1,3 +1,5 @@
+<img width="776" height="871" alt="Capture d’écran 2026-11-22 202643" src="https://github.com/user-attachments/assets/11de3b5e-9cc6-46ae-9e56-22c7c52723f4" />
+
 # V15 dual-carrier PCM12 TX and MPX RX for ESP8266
 
 Use this hybrid firmware with the [V15 universal HTML](../CB_FM_STEREO-Universal.html) over **1.5 Mbaud, 8N1**. The TX stream is **12-bit stereo PCM at 36 kSa/s per channel**. The ESP8266 builds the **120 kSa/s** multiplex. RX returns **MPX3** to the browser at 120, 96, or 48 kSa/s in HQ, ROBUST, or MONO. The RX range is **2,401–2,482.5 MHz**. The TX range for the first carrier is **2,401–2,481.71825 MHz**, leaving room for the second centre and PLL rounding.
