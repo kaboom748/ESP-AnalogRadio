@@ -1,6 +1,7 @@
 <mark>ESP-AnalogRadio/CB-FMStereov1/CB_V15_PCM12 - ESP8266 ESP32-C5 ESP32-C6 ESP32 SUPPORTED</mark> 
 
 PCM 12 bits (high quality analog audio for a cheap WIFI chip...).... RX-HQ-EXAMPLE-FMStereo.mp4
+<img width="1536" height="1024" alt="Image ChatGPT 23 nov  2026, 15_38_18" src="https://github.com/user-attachments/assets/644a40d8-7ed7-4401-b829-825c30caeb24" />
 
 “No soldering, no extra components: all you need is an ESP8266 D1 Mini and its serial port to broadcast analog FM stereo.”
 
