@@ -159,7 +159,13 @@ extern "C" bool c5_tx_radio_prepare(uint64_t carrier_hz,uint8_t apwr) {
     const uint32_t common2=(REG_READ(Tone2)&~(Fields|Gate))|FineMode|gain;
     const uint32_t fraction=REG_READ(Fraction)&~15u;
     for(unsigned k=0;k<ToneCodes;++k) {
-        const unsigned second=k+SecondToneSteps;
+        //const unsigned second=k+SecondToneSteps;
+//100khz
+const int primaryDelta = static_cast<int>(k) - C5_TX_NCO_CARRIER_CODE;
+const int secondCenter = C5_TX_NCO_CARRIER_CODE + static_cast<int>(SecondToneSteps);
+const int secondCode = secondCenter + 2 * primaryDelta;
+const unsigned second = secondCode < 0 ? 0u : static_cast<unsigned>(secondCode);
+
         toneRegisters[k]={fraction|(k&3u)|((second&3u)<<2),
                           common1|Gate|(k>>2),common2|Gate|(second>>2)};
     }
