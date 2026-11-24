@@ -1,5 +1,3 @@
-# CB FM Stereo
-
 ### 🟠 Known Reception Artifacts
 
 The remaining imperfections in the received audio are most likely
@@ -15,6 +13,13 @@ digital circuitry.
 
 This project is constantly evolving, and there will always be room
 for further refinement, optimization, and improvement.
+
+That being said, achieving this level of analog FM stereo audio
+quality using a chip originally designed for Wi-Fi communication
+is already a pretty impressive result, especially considering
+that it was never intended for this kind of application.
+
+# CB FM Stereo
 
 A browser-controlled, half-duplex analog FM radio. At each station, the computer supplies the microphone, speaker, and controls over USB serial. The ESP uses its radio PHY for the over-the-air FM link. Two radios take turns transmitting on the same frequency, without a Wi-Fi association.
 
