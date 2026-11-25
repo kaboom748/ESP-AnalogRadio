@@ -1,3 +1,7 @@
+WARNING !!! ±50 kHz only... don't listen to ±75 kHz with this version.
+
+***Lower RF TX Power on ESP32 and don't use V2 (ESP32 TX will be OK on RX from ESP8266)
+
 # V15 dual-mono FM for ESP8266
 
 Use the [V15 universal HTML](../CB_FM_STEREO-Universal.html) over **1.5 Mbaud, 8N1**. Press PTT with a stereo audio source. The browser sends PCM12 at **36 kSa/s per channel**, and the ESP8266 routes the channels to two independent mono FM carriers.
