@@ -1,3 +1,5 @@
+WARNING !!!  ±50 kHz only... don't listen to ±75 kHz with this version.
+
 # V15 PCM12 TX and MPX RX for ESP8266
 
 Use this hybrid firmware with the [V15 universal HTML](../CB_FM_STEREO-Universal.html) over **1.5 Mbaud, 8N1**. The TX stream is **12-bit stereo PCM at 36 kSa/s per channel**. The ESP8266 builds the **120 kSa/s** multiplex. RX returns **MPX3** to the browser at 120, 96, or 48 kSa/s in HQ, ROBUST, or MONO. The RF range exposed to the page is **2,401–2,482.5 MHz**.
