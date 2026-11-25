@@ -1,3 +1,7 @@
+WARNING !!! ±50 kHz only... don't listen to ±75 kHz with this version.
+
+***Lower RF TX Power on ESP32 and don't use V2 (ESP32 TX will be OK on RX from ESP8266)
+
 <img width="776" height="871" alt="Capture d’écran 2026-11-22 202643" src="https://github.com/user-attachments/assets/11de3b5e-9cc6-46ae-9e56-22c7c52723f4" />
 
 # V15 dual-carrier PCM12 TX and MPX RX for ESP8266
