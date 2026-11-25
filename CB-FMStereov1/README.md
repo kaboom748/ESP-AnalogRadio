@@ -1,3 +1,5 @@
+WARNING !!!  ±50 kHz only don't listen to ±75 kHz version (ESP8266 specific or old releases 50khz)
+
 ### 🟠 Known Reception Artifacts
 
 The remaining imperfections in the received audio are most likely
