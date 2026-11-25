@@ -1,4 +1,4 @@
-WARNING !!!  ±50 kHz only don't listen to ±75 kHz version (ESP8266 specific or old releases 50khz)
+WARNING !!!  The ±50 kHz only don't listen to ±75 kHz version (ESP8266 specific)
 
 ### 🟠 Known Reception Artifacts
 
