@@ -1,6 +1,6 @@
 WARNING !!!  ±50 kHz only... don't listen to ±75 kHz with this version.
 
-***Lower RF TX Power on ESP32 and don't use V2 (ESP32 will be OK on ESP8266)
+***Lower RF TX Power on ESP32 and don't use V2 (ESP32 TX will be OK on RX from ESP8266)
 
 # V15 PCM12 TX and MPX RX for ESP8266
 
