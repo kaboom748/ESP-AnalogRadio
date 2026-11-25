@@ -1,4 +1,4 @@
-"WARNING !!! ESP8266 ±50 kHz version: do not listen to FM with ±75 kHz deviation."
+"WARNING !!! ESP8266 ±50 kHz version: do not listen to FM with ±75 kHz deviation. and lower TX POWER"
 
 ### 🟠 Known Reception Artifacts
 
