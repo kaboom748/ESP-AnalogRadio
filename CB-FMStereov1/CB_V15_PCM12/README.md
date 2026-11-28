@@ -1,3 +1,5 @@
+"Synthétiser une tonalité FM par PWM c'est ça qu'on aime :P"
+
 <img width="2880" height="2780" alt="téléchargement" src="https://github.com/user-attachments/assets/1de7ccf8-c4c1-461e-9847-af2a8e1d18a4" />
 <img width="1536" height="1024" alt="Image ChatGPT 23 nov  2026, 15_38_18" src="https://github.com/user-attachments/assets/131f0755-a14a-451e-b935-923929555ae5" />
 # CB FM Stereo V15 PCM12
